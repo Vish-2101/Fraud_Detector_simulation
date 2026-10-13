@@ -18,6 +18,13 @@ except ImportError:  # allow running from repo root or as module
     from dgim import DGIM  # type: ignore
 
 
+# Indicators produced by the probabilistic structures themselves. Recorded on
+# each event for the inspector, but EXCLUDED from Apriori baskets by default:
+# they fire on nearly every repeat event and would otherwise dominate all top
+# itemsets, hiding the domain-signal combinations the demo is about.
+AUX_INDICATORS = frozenset({'bloom_device_seen', 'bloom_card_seen', 'dgim_device_burst'})
+
+
 def suspicious_bit(event):
     """Binary suspicious-event predicate for DGIM streams.
 
@@ -178,19 +185,16 @@ class Detector:
         add(lifecycle and features['ip_accounts'] >= 4, 10, 'At least 4 accounts share this IP in 60s', 'shared_ip')
         add(e['type'] == 'usage' and e['usage'] >= 80, 20, 'At least 80% of trial credits consumed', 'heavy_usage')
         add(e['type'] == 'trial' and features['recent_cancels'] > 0, 20, 'Trial follows a cancellation on this device', 'trial_after_cancel')
-        # Contextual probabilistic signals: modest, corroborated, never block alone.
-        # Bloom positives are common in legitimate reuse (family devices), and
-        # DGIM is approximate, so each contributes at most +10 and only with
-        # corroborating evidence. Max combined (+20) stays below review (35).
-        add(lifecycle and device_seen and (features['device_accounts'] >= 2 or features['device_trials'] >= 1 or e['disposable']),
-            10, 'Device possibly seen before (Bloom, corroborated)', 'bloom_device_seen')
-        add(payment and card_seen and (features['card_attempts'] >= 2 or e['failed']),
-            10, 'Card possibly seen before (Bloom, corroborated)', 'bloom_card_seen')
-        add(dgim_burst and e['type'] != 'cancel' and bit == 1 and (e['failed'] or e['disposable'] or e['country_mismatch']),
-            10, f'Unusually high recent suspicious activity on device (DGIM est. {dgim_est}/60)', 'dgim_device_burst')
+        # Probabilistic Bloom/DGIM rules are applied AFTER the shadow baseline
+        # below (base_score), so each event records both the exact-rule-only
+        # score and the full score. See aux_reasons block.
 
         # Raw basket indicators for Apriori (added whenever condition true,
         # independent of whether the corroborated scoring rule fired).
+        # NOTE: Bloom/DGIM indicators are recorded on the event but EXCLUDED
+        # from Apriori baskets (see apriori()): they fire on nearly every
+        # repeat event and would otherwise dominate all top itemsets,
+        # hiding the domain-signal combinations the demo is about.
         if device_seen and 'bloom_device_seen' not in items:
             items.append('bloom_device_seen')
         if card_seen and 'bloom_card_seen' not in items:
@@ -198,7 +202,37 @@ class Detector:
         if dgim_burst and 'dgim_device_burst' not in items:
             items.append('dgim_device_burst')
 
-        e.update(features=features, reasons=reasons, items=items, score=min(100, sum(r['points'] for r in reasons)))
+        base_score = min(100, sum(r['points'] for r in reasons))
+        e.update(features=features, reasons=reasons, items=items, score=base_score)
+        # Shadow (ablation) baseline: score/action WITHOUT the probabilistic
+        # Bloom/DGIM rules. Reasons list at this point holds only exact rules
+        # because the three aux rules are appended below.
+        base_action = self.action(base_score)
+        # Modest (+10), corroborated, never blocks alone: Bloom positives are
+        # common in legitimate reuse (family devices) and DGIM is approximate,
+        # so each fires only with independent evidence. Max combined (+20)
+        # stays below review (35).
+        aux_reasons = []
+        aux_items = []
+        if lifecycle and device_seen and (features['device_accounts'] >= 2 or features['device_trials'] >= 1 or e['disposable']):
+            aux_reasons.append({'points': 10, 'reason': 'Device possibly seen before (Bloom, corroborated)'})
+            aux_items.append('bloom_device_seen')
+        if payment and card_seen and (features['card_attempts'] >= 2 or e['failed']):
+            aux_reasons.append({'points': 10, 'reason': 'Card possibly seen before (Bloom, corroborated)'})
+            aux_items.append('bloom_card_seen')
+        if dgim_burst and e['type'] != 'cancel' and bit == 1 and (e['failed'] or e['disposable'] or e['country_mismatch']):
+            aux_reasons.append({'points': 10, 'reason': f'Unusually high recent suspicious activity on device (DGIM est. {dgim_est}/60)'})
+            aux_items.append('dgim_device_burst')
+        for r in aux_reasons:
+            reasons.append(r)
+        for item in aux_items:
+            if item not in items:
+                items.append(item)
+        full_score = min(100, base_score + sum(r['points'] for r in aux_reasons))
+        e.update(reasons=reasons, items=items, score=full_score)
+        e['shadow'] = {'base_score': base_score, 'base_action': base_action,
+                       'delta': full_score - base_score,
+                       'flipped': base_action != self.action(full_score)}
         e.update(action=self.action(e['score']), review_threshold=self.review_threshold, block_threshold=self.block_threshold)
         e['bloom'] = {'device_result': device_bloom, 'card_result': card_bloom,
                       'device_seen': device_seen, 'card_seen': card_seen}
@@ -207,9 +241,19 @@ class Detector:
                      'buckets': dev_stream.bucket_summary()[-8:]}
         e['latency_ms'] = round((time.perf_counter() - started) * 1000, 3)
 
-        # ---- Bloom: insert AFTER query ----
-        self.bloom_device.add(e['device'])
-        self.bloom_card.add(e['card'])
+        # ---- Bloom: insert AFTER query, high-risk identifiers only ----
+        # The filter holds identifiers from suspicious or flagged events
+        # (suspicious_bit == 1 or review/block action), matching the
+        # "high-risk identifier" wording in the report — NOT every event.
+        # Feedback-loop warning: because insertion depends on the action,
+        # past decisions influence future Bloom hits (self-reinforcement).
+        # This is bounded here: a hit adds at most +10 and only with
+        # independent corroborating evidence, and reset() clears the filter.
+        high_risk = (bit == 1) or (e['action'] != 'allow')
+        if high_risk:
+            self.bloom_device.add(e['device'])
+            self.bloom_card.add(e['card'])
+        e['bloom']['inserted'] = high_risk
         self.events.append(e)
         return e
 
@@ -231,15 +275,32 @@ class Detector:
         return dict(**cm, precision=ratio(cm['tp'], cm['tp'] + cm['fp']), recall=ratio(cm['tp'], cm['tp'] + cm['fn']),
                     false_positive_rate=ratio(cm['fp'], cm['fp'] + cm['tn']), labeled=sum(cm.values()))
 
-    def apriori(self, min_support=None):
+    def apriori(self, min_support=None, include_labels=False, events=None):
         """Level-wise Apriori with subset pruning; at most 3-item sets.
+
+        Baskets EXCLUDE Bloom/DGIM aux indicators (see AUX_INDICATORS) so
+        domain-signal combinations are not drowned out by repeat-event markers.
+
+        include_labels=True is an OFFLINE, EVALUATION-ONLY mode: each basket
+        gains `label:abuse` / `label:legitimate` (unknown labels add nothing),
+        yielding rules like `device_reuse + temporary_email -> label:abuse`
+        with real lift. Scoring never sees labels; this only re-reads stored
+        events for analysis.
 
         Returns {'itemsets': [...], 'rules': [...], 'analyzed': n}.
         Rules carry support, confidence and lift. Co-occurrence is not causation.
         """
         if min_support is None:
             min_support = self.apriori_support
-        baskets = [set(e.get('items', [])) for e in self.events]
+        source = self.events if events is None else events
+        baskets = []
+        for e in source:
+            basket = set(e.get('items', [])) - AUX_INDICATORS
+            if include_labels:
+                label = e.get('label')
+                if label in ('abuse', 'legitimate'):
+                    basket = set(basket) | {f'label:{label}'}
+            baskets.append(basket)
         n = len(baskets)
         if not n:
             return {'itemsets': [], 'rules': [], 'analyzed': 0, 'min_support': min_support}
@@ -301,6 +362,40 @@ class Detector:
         rules = sorted(rules, key=lambda r: (-r['confidence'], -r['lift'] or 0, -r['count']))[:8]
         return {'itemsets': results, 'rules': rules, 'analyzed': n, 'min_support': min_support}
 
+    def apriori_time_split(self, min_support=None):
+        """Mine the first half of the session, test rules on the second half.
+
+        Offline, evaluation-only (§4.1): runs apriori(include_labels=True) on
+        each half, then re-scores the train rules' confidence on the held-out
+        half. Stable rules keep similar confidence; rules that collapse
+        (e.g. support 1.0 -> 0.3) are overfit to the first half. Scoring is
+        unaffected — this only re-reads stored events.
+        """
+        if min_support is None:
+            min_support = self.apriori_support
+        n = len(self.events)
+        if n < 4:
+            return {'train_n': 0, 'test_n': n, 'checked': [], 'note': 'Need at least 4 events for a time split.'}
+        cut = n // 2
+        train = self.apriori(min_support=min_support, include_labels=True, events=self.events[:cut])
+        test_baskets = []
+        for e in self.events[cut:]:
+            basket = (set(e.get('items', [])) - AUX_INDICATORS)
+            if e.get('label') in ('abuse', 'legitimate'):
+                basket = basket | {f"label:{e['label']}"}
+            test_baskets.append(basket)
+        m = len(test_baskets)
+        checked = []
+        for r in train['rules'][:8]:
+            ant, cons = frozenset(r['antecedent']), frozenset(r['consequent'])
+            ant_c = sum(ant <= b for b in test_baskets)
+            full_c = sum((ant | cons) <= b for b in test_baskets)
+            test_conf = round(full_c / ant_c, 4) if ant_c else None
+            checked.append({'antecedent': r['antecedent'], 'consequent': r['consequent'],
+                            'train_confidence': r['confidence'], 'test_confidence': test_conf,
+                            'test_antecedent_count': ant_c, 'lift': r['lift']})
+        return {'train_n': cut, 'test_n': m, 'checked': checked, 'note': ''}
+
     def dgim_state(self, entity=None):
         """DGIM inspection state for a device entity (default: most recent event)."""
         if entity is None and self.events:
@@ -329,6 +424,9 @@ class Detector:
             series[bucket]['total'] += 1
             series[bucket]['flagged'] += e['action'] != 'allow'
         ap = self.apriori()
+        ap_eval = self.apriori(include_labels=True)
+        ts = self.apriori_time_split()
+        shadow = self.shadow_summary()
         return dict(clock=self.clock, total=len(self.events), active=len(self.window), counts=dict(counts),
                     thresholds={'review': self.review_threshold, 'block': self.block_threshold},
                     dgim_config={'window': self.DGIM_WINDOW, 'threshold': self.DGIM_THRESHOLD},
@@ -338,10 +436,28 @@ class Detector:
                     bloom=self.bloom_state(),
                     dgim=self.dgim_state(dgim_entity),
                     patterns=ap['itemsets'], rules=ap['rules'], analyzed=ap['analyzed'],
+                    apriori_eval={'itemsets': ap_eval['itemsets'][:8], 'rules': ap_eval['rules'][:8],
+                                  'analyzed': ap_eval['analyzed']},
+                    time_split=ts, shadow=shadow,
                     average_latency_ms=round(sum(e['latency_ms'] for e in self.events) / max(1, len(self.events)), 3))
 
+    def shadow_summary(self):
+        """Ablation summary: how many stored decisions change when the three
+        probabilistic Bloom/DGIM rules are removed (base_score vs score).
+
+        Honest reporting hook for the write-up: on bursty scenarios the exact
+        rules already decide everything (0 flips); on low-and-slow traffic the
+        persistent structures add the flips. Counts only, no rescoring.
+        """
+        flipped = [e for e in self.events if e.get('shadow', {}).get('flipped')]
+        toward_review = [e for e in flipped
+                         if self.action(e['shadow']['base_score']) == 'allow' and e['action'] != 'allow']
+        return {'compared': len(self.events), 'flipped': len(flipped),
+                'allow_to_flagged': len(toward_review),
+                'flipped_ids': [e['id'] for e in flipped][-12:]}
+
     def scenario(self, name):
-        if name not in {'normal', 'card_testing', 'trial_abuse', 'shared_ip', 'mixed'}:
+        if name not in {'normal', 'card_testing', 'trial_abuse', 'shared_ip', 'mixed', 'low_slow'}:
             raise ValueError('Unknown scenario.')
         self.run_id += 1
         prefix = f'r{self.run_id}'
@@ -373,6 +489,21 @@ class Detector:
                              disposable=True, usage=95 if kind == 'usage' else 0,
                              label='unknown' if kind == 'cancel' else 'abuse')
                     rows.append(e)
+        elif name == 'low_slow':
+            # Low-and-slow reuse: one device, a new account every ~90s with a
+            # disposable-email signup. The exact 60s window forgets each event
+            # (device_accounts stays 1, no velocity rule fires), while the
+            # session Bloom filter persists and the count-based DGIM window
+            # (last 60 ELEMENTS) still sees the burst. Later events reach
+            # review (15 disposable + 10 Bloom + 10 DGIM = 35) where the exact
+            # review (15 disposable + 10 Bloom + 10 DGIM = 35) where the exact
+            # rules alone give 15 (allow) — the shadow summary shows the flips.
+            for i in range(7):
+                e = event(i)
+                e.update(type='signup', account=f'{prefix}-slow-user-{i}',
+                         device=f'{prefix}-slow-laptop', disposable=True,
+                         label='abuse', step=90)
+                rows.append(e)
         else:
             # Deterministic mixed demonstration; add plausible ambiguous examples.
             for child in ['normal', 'card_testing', 'trial_abuse', 'shared_ip']:

@@ -112,3 +112,43 @@ class DGIM:
             'bucket_count': len(self.buckets),
             'invariants': inv,
         }
+
+
+def long_stream_demo(n=1000, window=100, density=0.3, seed=42):
+    """Deterministic long-stream demo (§7.2): run n bits through DGIM and
+    sample estimate vs exact count plus bucket count over time.
+
+    Shows the memory/accuracy trade-off: bucket count stays O(log n) while a
+    naive exact window stores all `window` bits, and relative error stays
+    within the classical ~50% bound. Returns {'samples': [...], 'summary'}.
+    Samples every max(1, n//50) steps to keep the payload small.
+    """
+    import random as _random
+    rng = _random.Random(seed)
+    d = DGIM(window_size=window)
+    exact_window = deque(maxlen=window)
+    samples = []
+    step = max(1, n // 50)
+    max_rel_err, err_sum, err_n = 0.0, 0.0, 0
+    max_buckets = 0
+    for i in range(1, n + 1):
+        bit = 1 if rng.random() < density else 0
+        d.update(bit)
+        exact_window.append(bit)
+        max_buckets = max(max_buckets, len(d.buckets))
+        if i % step == 0 or i == n:
+            exact = sum(exact_window)
+            est = d.estimate()
+            rel = abs(est - exact) / exact if exact else 0.0
+            max_rel_err = max(max_rel_err, rel)
+            err_sum += rel
+            err_n += 1
+            samples.append({'pos': i, 'exact': exact, 'estimate': est,
+                            'rel_error': round(rel, 4), 'buckets': len(d.buckets)})
+    return {'samples': samples,
+            'summary': {'n': n, 'window': window, 'density': density,
+                        'max_rel_error': round(max_rel_err, 4),
+                        'avg_rel_error': round(err_sum / max(1, err_n), 4),
+                        'max_buckets': max_buckets,
+                        'exact_storage': window,
+                        'note': 'Buckets stay O(log n); exact window stores `window` bits.'}}
