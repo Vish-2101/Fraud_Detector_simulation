@@ -1,45 +1,62 @@
 # Radar Lab — IA2 working model
 
-A local, interactive simulation of **real-time payment fraud and account/free-trial abuse detection**, aligned with the supplied Stripe Radar report. This is an independent educational prototype, not Stripe software. It uses synthetic events and transparent rules, not a trained model.
+A local, interactive simulation of **real-time payment fraud and account/free-trial abuse detection**, inspired by the business problem addressed by Stripe Radar. This is an independent educational prototype, not Stripe software. It uses synthetic events and transparent rules, not a trained model.
 
 ## Start
 
-On macOS, double-click **Start Radar Lab.command**. Leave its Terminal window open while presenting. If macOS does not open the launcher, open Terminal in this folder and run:
+macOS: double-click **Start Radar Lab.command**, or in a terminal in this folder run:
 
 ```sh
 python3 server.py
 ```
 
-Then visit **http://127.0.0.1:8765**. Python 3.9 or newer is required; no package installation, API key, internet connection or database is needed. Stop with Control+C. Restarting or resetting clears the session. If the port is busy, stop the old server or use `python3 server.py --port 8766` and visit that port.
+Linux / Windows (PowerShell):
+
+```sh
+python server.py
+# or: python3 server.py --port 8766
+```
+
+Then visit **http://127.0.0.1:8765**. Python 3.9+ required; no packages, API keys, internet, or database. Stop with Ctrl+C. Reset clears the session (exact window, Bloom filters, DGIM streams, history).
 
 ## Five-minute demonstration
 
-1. Run **Everyday payments**: all eight events are allowed.
-2. Run **Card-testing attack**: repeated attempts on one fictional card lead to blocks; select an event to inspect its score.
-3. Run **Repeated free-trial abuse**: multiple accounts on a reused device cycle through signup, trial, usage and cancellation. Later trial attempts accumulate sufficient evidence to block.
-4. Run **Shared campus Wi-Fi**: eight legitimate accounts share one IP but use different devices. They remain allowed under the default policy.
-5. Reset and run **Mixed traffic**: includes obvious attacks, ambiguous legitimate travelers, and stealth abuse. Discuss false positives and false negatives. Move the review threshold to compare precision and recall.
-6. Open **Algorithm explorer**: examine exact counts, Count-Min Sketch estimates and Apriori signal patterns. Click **Advance 61s** to expire recent counts while preserving session-wide sketch counts and history.
-7. Send custom events using the same card or device and different accounts. Export the session as CSV for evidence.
+1. Run **Everyday payments**: 8 independent events, all allowed. Bloom reports `definitely_absent` on first sightings; DGIM bits stay 0; Apriori has few/no patterns.
+2. Run **Card-testing attack**: repeated small failed payments on one fictional card. Card-velocity rules raise risk to block; DGIM estimate rises for that device/card; Bloom reports `possibly_present` after the first insert; Apriori surfaces `card_velocity + failed_payment + country_mismatch`.
+3. Run **Repeated free-trial abuse**: reused device cycles signup/trial/usage/cancel with disposable email. Device/trial rules plus corroborated Bloom/DGIM signals move later trials to block.
+4. Run **Shared campus Wi-Fi**: 8 legitimate accounts share one IP with distinct devices. Shared IP alone (+10) stays allowed; Bloom positives are not treated as proof; DGIM stays 0.
+5. Reset and run **Mixed traffic**: attacks + legitimate travelers (FP) + stealth abuse (FN). Move the review threshold to compare precision/recall.
+6. Open **Algorithm explorer**: §A Apriori (support/confidence/lift), §B DGIM (estimate vs exact + buckets), §C Bloom (bit grids + FPP). Click **Advance 61s**: exact 60s window expires, Bloom persists (insert-only), DGIM is count-based (last 60 elements, not seconds).
+7. Send custom events reusing a card/device across accounts. Export CSV for evidence.
 
-Playback speed changes the visual delay, not the event timestamps. Each event advances the simulated clock one second. Run scenarios consecutively to combine them; use Reset for an isolated experiment. Scenario runs use fresh identifiers so separate runs do not accidentally share identities. Pause/resume preserves the remaining queue.
+Playback speed changes visual delay only. Each event advances the clock 1s by default. Scenario runs use fresh `rN-` prefixes so runs don't share identities.
 
-## Implementation and syllabus mapping
+## Architecture and event flow
 
-| Component | Working implementation | Purpose |
-|---|---|---|
-| Data stream | Sequential synthetic events consumed by Python | Continuous arrivals |
-| Sliding window | Deque plus keyed reference counters over `(now − 60, now]` | Exact recent attempts and identity reuse |
-| Risk filtering | Explicit weighted predicates; score capped at 100 | Explainable allow/review/block |
-| Count-Min Sketch | 4 seeded BLAKE2b hash rows × 64 counters | Approximate lifetime device-event frequency |
-| Apriori | Level-wise candidates, subset pruning, support ≥12%, max size 3 | Offline signal co-occurrence |
-| Evaluation | Confusion matrix, precision and recall from separate synthetic labels | Threshold trade-offs |
+```
+synthetic event -> validate -> advance clock/expire exact window
+  -> Bloom query (before insert) -> DGIM update+estimate
+  -> exact window features -> weighted rules -> score/action
+  -> Bloom insert (after query) -> store event -> state/CSV
+```
 
-The stream engine uses expected O(1) keyed updates and amortized O(1) expiry per event; a single arrival after a time jump may expire many entries. Window storage scales with active events and keys. Sketch update/query costs O(depth); there are 256 counters, represented by Python integers (not a claim of a 1 KB Python memory footprint). Exact lifetime counts are kept for classroom comparison. Apriori and dashboard snapshots scan session history and are **not** constant-time streaming operations. Session history is capped at 2,000 events; the table shows the latest 150 and the chart the latest 40 occupied 10-second buckets. Export includes the whole session.
+Labels (`legitimate/abuse/unknown`) never enter scoring, Bloom, DGIM, or Apriori baskets; they are used only for evaluation.
+
+## Primary analytical algorithms (syllabus)
+
+| Algorithm | Where | What it does | Relation to score | Limitation |
+|---|---|---|---|---|
+| Apriori | `engine.py:Detector.apriori` | Level-wise frequent itemsets over per-event signal baskets (only fired indicators), subset pruning, support ≥12% default, size ≤3; plus confidence/lift rules | None — offline analysis only | Correlation ≠ causation; baskets are rule-derived so patterns can be circular; high support ≠ fraud |
+| DGIM | `algorithms/dgim.py`, per-device/card streams in `engine.py` | Classical buckets (powers of two, ≤2 per size, timestamps), expiry outside last 60 elements, estimate = sum − oldest/2 | Modest +10 `dgim_device_burst` only when estimate ≥5 AND current event carries failed/disposable/mismatch; never blocks alone (max +20 < review 35) | Approximate by design; window is last N elements, ≈60s only under 1-event/s playback |
+| Bloom Filter | `algorithms/bloom_filter.py`, `bloom_device`/`bloom_card` in `engine.py` | 512-bit, 3×BLAKE2b hashes; query-before-insert; `definitely_absent`/`possibly_present`; tracks inserts/queries/occupancy/theoretical FPP `(1−e^{−kn/m})^k` | Modest +10 `bloom_*_seen` only when corroborated (reuse/trial/disposable/failure); never blocks alone | False positives possible; no deletion (reset clears); positive ≠ proof |
+
+Exact 60s deque + reference counters remain the enforcement source so classroom thresholds stay deterministic. DGIM/Bloom are shown separately from exact counts in the inspector and explorer.
+
+Suspicious-bit predicate for DGIM: `1` if `failed` or `disposable` or `country_mismatch`, else `0` (`engine.suspicious_bit`). Documented, label-free.
 
 ## Scoring policy
 
-Default review threshold: 35. Default block threshold: 65. The current event is included in its window features.
+Defaults: review 35, block 65. Current event included in window features.
 
 | Rule | Points | Applies to |
 |---|---:|---|
@@ -53,41 +70,41 @@ Default review threshold: 35. Default block threshold: 65. The current event is 
 | ≥4 distinct accounts on an IP in 60 seconds | 10 | Signup, trial, usage |
 | ≥80% trial credits used | 20 | Usage |
 | Trial after a recent cancellation on the same device | 20 | Trial |
+| Device possibly seen before (Bloom, corroborated) | 10 | Signup, trial, usage |
+| Card possibly seen before (Bloom, corroborated) | 10 | Payment |
+| DGIM device burst (est. ≥5, corroborated) | 10 | Any except cancel |
 
-Cancellation events update context and have zero risk score; their demo truth is unknown. The score is a heuristic, **not a probability**. Identifiers are fictional aliases; do not enter real card numbers. The pre-supplied failure signal represents a hypothetical known issuer response, not a prediction of authorization failure. Decisions are simulated recommendations: blocked events still enter the attempt history, and future authored events are still played to illustrate detection. The model does not actually prevent payments or stop resource usage.
+Cancel events update context and score 0. Score is a heuristic, **not a probability**. Fictional aliases only. Blocked events still enter history for teaching; the model prevents nothing real.
 
 ## Evaluation semantics
 
-- Truth labels belong to the scenario and never influence the scoring function.
-- Review **or** block counts as a positive detection; allow counts as negative.
-- Precision = TP/(TP+FP). Recall = TP/(TP+FN). Undefined denominators display a dash.
-- Unknown labels are excluded. All metrics are per-event, not per-account.
-- Changing thresholds re-evaluates stored scores for the evaluation panel. Historical event decisions, chart and counters remain as recorded. New events use the new thresholds.
-- These labels and patterns are authored, not independently validated. Performance is not evidence of real-world effectiveness. Processing time measures only local engine computation, excluding network, rendering, history serialization and offline analytics.
+- Review **or** block = positive; allow = negative; unknown excluded; per-event.
+- Precision/Recall/FPR replay stored scores under current thresholds; history decisions unchanged.
+- Labels authored for demo; not evidence of real-world effectiveness. Latency = local engine compute only.
 
 ## Academic boundaries
 
-The supplied report distinguishes publicly documented Stripe capabilities from academic candidates. This model preserves that distinction. The window length, weights, synthetic data, sketch and Apriori configuration are our teaching choices. There is no claim Stripe uses these algorithms or settings. No Stripe service is called.
+Independent educational simulation, not Stripe software. No Stripe service is called. Algorithms, window lengths, weights, and thresholds are teaching choices, not claims about Stripe's proprietary implementation.
 
-This model does not implement a neural network, CURE, GSP, exponential histogram or DTW. The cancellation-to-trial rule is a simple recent-history predicate, not sequence mining. Shared IP is weak evidence; current defaults keep it below review. The campus example illustrates one false-positive safeguard, not a fairness guarantee.
+Does not implement neural networks, CURE, GSP, DTW, Isolation Forest, or Count-Min Sketch (removed; see migration note). The cancel-to-trial rule is a predicate, not sequence mining. Shared IP is weak evidence kept below review. Review is a generic verification suggestion, not Stripe payment-review semantics.
 
-Review is a generic review/verification recommendation, not a re-creation of Stripe’s payment-review action semantics. The demonstration does not capture funds, invoke authentication, implement issuer authorization or enforce trial restrictions. Future improvements could include validated models trained on independent data, outcome feedback, device-identity reliability checks and drift monitoring.
+Migration note: versions before this change used Count-Min Sketch for lifetime device counts. It has been fully removed and replaced by DGIM + Bloom Filter per syllabus scope.
 
 ## Files and verification
 
-- `engine.py`: detection, counters, sketch, Apriori and scenario generation.
-- `server.py`: loopback-only HTTP service with JSON endpoints and CSV export.
-- `static/`: dashboard with no third-party dependencies.
-- `tests/test_engine.py`: meaningful engine tests, including expiry boundaries, false positives, label independence, collisions and Apriori.
-
-Run the tests from this folder:
+- `engine.py`: detection, exact window, Bloom/DGIM integration, Apriori + rules, scenarios.
+- `algorithms/bloom_filter.py`: standard Bloom filter.
+- `algorithms/dgim.py`: classical DGIM.
+- `server.py`: loopback HTTP, `/api/state|event|scenario|reset|advance|thresholds|config|inspect`, CSV export.
+- `static/`: dashboard + §A/B/C explorer, no third-party deps.
+- `tests/test_engine.py`: 32 tests (engine, Apriori, DGIM, Bloom, integration).
 
 ```sh
 python3 -m unittest discover -s tests -v
 ```
 
-The service binds to the local computer only. It is a single shared in-memory classroom session, not a production multi-user service. Refreshing the page retains server state but ends browser-driven playback. No data is written to disk except a CSV you explicitly download.
+Single shared in-memory session; refresh keeps server state but ends playback. Nothing written to disk except explicit CSV download.
 
 ## AI-use declaration
 
-Codex assisted with implementation, dashboard design, documentation and tests. Students should verify the behavior by running the scenarios, understand each algorithm and disclose this assistance in their submission. The supplied assignment and report were treated as reference material; no report was submitted or modified.
+Codex assisted with implementation, dashboard design, documentation and tests. Verify by running the scenarios, understand each algorithm, and disclose this assistance in your submission.
