@@ -26,11 +26,15 @@ class BloomFilter:
         self._members = set()  # exact reference for demo/testing only, not part of the filter
 
     def positions(self, key):
-        key = str(key)
+        # Keyed hashing: BLAKE2b `key=` parameter with a per-function domain
+        # separation string (the construction the report recommends). Each of
+        # the k hash functions uses a distinct key, so positions are
+        # deterministic yet independent across functions.
+        data = str(key).encode('utf-8')
         out = []
         for i in range(self.num_hashes):
-            digest = hashlib.blake2b(f'{i}:{key}'.encode('utf-8'), digest_size=8).digest()
-            out.append(int.from_bytes(digest, 'big') % self.size)
+            h = hashlib.blake2b(data, digest_size=8, key=f'bloom-k{i}'.encode('utf-8'))
+            out.append(int.from_bytes(h.digest(), 'big') % self.size)
         return out
 
     def add(self, key):

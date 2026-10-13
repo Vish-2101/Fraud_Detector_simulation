@@ -41,11 +41,22 @@ class Handler(BaseHTTPRequestHandler):
                     except (TypeError, ValueError):
                         pass
                 return self.reply(detector.state(dgim_entity=entity))
+            if route == '/api/dgim_demo':
+                from algorithms.dgim import long_stream_demo
+                qs2 = parse_qs(parsed.query)
+                try:
+                    n = int((qs2.get('n') or ['1000'])[0])
+                except (TypeError, ValueError):
+                    n = 1000
+                n = max(100, min(5000, n))
+                return self.reply(long_stream_demo(n=n))
             if route == '/api/export':
                 out = io.StringIO()
                 fields = ['id', 'time', 'type', 'account', 'device', 'ip', 'card', 'amount', 'score', 'action',
                           'label', 'review_threshold', 'block_threshold',
-                          'bloom_device', 'bloom_card', 'dgim_bit', 'dgim_est', 'dgim_exact']
+                          'bloom_device', 'bloom_card', 'bloom_inserted',
+                          'dgim_bit', 'dgim_est', 'dgim_exact',
+                          'shadow_base', 'shadow_flipped']
                 writer = csv.DictWriter(out, fields, extrasaction='ignore')
                 writer.writeheader()
                 for e in detector.events:
@@ -54,9 +65,13 @@ class Handler(BaseHTTPRequestHandler):
                     g = e.get('dgim', {})
                     row['bloom_device'] = b.get('device_result', '')
                     row['bloom_card'] = b.get('card_result', '')
+                    row['bloom_inserted'] = b.get('inserted', False)
                     row['dgim_bit'] = g.get('bit', '')
                     row['dgim_est'] = g.get('device_est', '')
                     row['dgim_exact'] = g.get('device_exact', '')
+                    sh = e.get('shadow', {})
+                    row['shadow_base'] = sh.get('base_score', '')
+                    row['shadow_flipped'] = sh.get('flipped', False)
                     writer.writerow({k: "'" + v if isinstance(v, str) and v.startswith(('=', '+', '-', '@', '\t', '\r')) else v for k, v in row.items()})
                 return self.reply(out.getvalue().encode(), content_type='text/csv; charset=utf-8')
         allowed = {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css'}

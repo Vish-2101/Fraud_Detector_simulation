@@ -26,8 +26,8 @@ class DetectorTests(unittest.TestCase):
 
     def test_window_boundary_and_distinct_reference_counts(self):
         d = Detector()
-        d.process(self.event())  # t=1
-        d.process(self.event())  # t=2
+        d.process(self.event(failed=True))  # t=1 (suspicious -> Bloom insert)
+        d.process(self.event(failed=True))  # t=2
         self.assertEqual(len(d.device_accounts['d']), 1)
         d.advance(59)  # t=61; first expires, second remains
         self.assertEqual(len(d.window), 1)
@@ -125,12 +125,21 @@ class DetectorTests(unittest.TestCase):
 
     def test_bloom_query_before_insert(self):
         d = Detector()
-        first = d.process(self.event(device='fresh-dev', card='fresh-card'))
+        first = d.process(self.event(device='fresh-dev', card='fresh-card', failed=True))
         self.assertFalse(first['bloom']['device_seen'])
         self.assertFalse(first['bloom']['card_seen'])
-        second = d.process(self.event(device='fresh-dev', card='fresh-card', account='b'))
+        self.assertTrue(first['bloom']['inserted'])  # suspicious -> inserted
+        second = d.process(self.event(device='fresh-dev', card='fresh-card', account='b', failed=True))
         self.assertTrue(second['bloom']['device_seen'])
         self.assertTrue(second['bloom']['card_seen'])
+
+    def test_bloom_benign_not_inserted(self):
+        # High-risk-only insertion: benign allow events leave no Bloom trace.
+        d = Detector()
+        e = d.process(self.event(device='benign-dev', card='benign-card'))
+        self.assertEqual(e['action'], 'allow')
+        self.assertFalse(e['bloom']['inserted'])
+        self.assertEqual(d.bloom_device.check('benign-dev', count_query=False), 'definitely_absent')
 
     def test_bloom_alone_cannot_block(self):
         d = Detector()
@@ -150,6 +159,58 @@ class DetectorTests(unittest.TestCase):
         nrows = [n.process(e) for e in n.scenario('normal')]
         self.assertTrue(all('dgim_device_burst' not in r['items'] for r in nrows))
         self.assertEqual(nrows[-1]['dgim']['device_est'], 0)
+
+    def test_low_slow_shadow_flips(self):
+        # Low-and-slow: exact 60s window forgets each 90s-spaced event, but
+        # persistent Bloom + count-based DGIM lift later events allow->review.
+        d = Detector()
+        rows = [d.process(e) for e in d.scenario('low_slow')]
+        self.assertTrue(all(r['shadow']['base_action'] == 'allow' for r in rows))
+        flipped = [r for r in rows if r['shadow']['flipped']]
+        self.assertGreaterEqual(len(flipped), 1)
+        s = d.shadow_summary()
+        self.assertGreaterEqual(s['flipped'], 1)
+        self.assertGreaterEqual(s['allow_to_flagged'], 1)
+        # Honest ablation on bursty traffic: exact rules already decide.
+        b = Detector()
+        for e in b.scenario('normal'):
+            b.process(e)
+        self.assertEqual(b.shadow_summary()['flipped'], 0)
+
+    def test_apriori_excludes_aux_indicators(self):
+        d = Detector()
+        for e in d.scenario('card_testing'):
+            d.process(e)
+        out = d.apriori()
+        for p in out['itemsets']:
+            self.assertFalse(set(p['items']) & {'bloom_device_seen', 'bloom_card_seen', 'dgim_device_burst'})
+        # Domain signals surface instead.
+        flat = {i for p in out['itemsets'] for i in p['items']}
+        self.assertIn('failed_payment', flat)
+
+    def test_apriori_label_eval_and_time_split(self):
+        d = Detector()
+        for e in d.scenario('mixed'):
+            d.process(e)
+        ev = d.apriori(include_labels=True)
+        label_rules = [r for r in ev['rules'] if 'label:abuse' in r['consequent']]
+        self.assertTrue(label_rules)
+        self.assertTrue(all(r['lift'] is not None and r['lift'] > 0 for r in label_rules))
+        ts = d.apriori_time_split()
+        self.assertGreater(ts['train_n'], 0)
+        self.assertGreater(ts['test_n'], 0)
+        self.assertTrue(ts['checked'])
+        # Scoring stayed label-free: labels never appear in items.
+        self.assertTrue(all('label:abuse' not in e.get('items', []) for e in d.events))
+
+    def test_dgim_long_stream_tradeoff(self):
+        from algorithms.dgim import long_stream_demo
+        demo = long_stream_demo(n=1000, window=100, density=0.3, seed=42)
+        self.assertEqual(len(demo['samples']), 50)
+        self.assertLessEqual(demo['summary']['max_rel_error'], 0.6)
+        # Memory: buckets O(log n), far below the exact 100-bit window.
+        self.assertLessEqual(demo['summary']['max_buckets'], 16)
+        self.assertEqual(demo['summary']['exact_storage'], 100)
 
     def test_state_contains_new_algorithm_state(self):
         d = Detector()

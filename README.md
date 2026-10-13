@@ -21,12 +21,13 @@ Then visit **http://127.0.0.1:8765**. Python 3.9+ required; no packages, API key
 
 ## Five-minute demonstration
 
-1. Run **Everyday payments**: 8 independent events, all allowed. Bloom reports `definitely_absent` on first sightings; DGIM bits stay 0; Apriori has few/no patterns.
-2. Run **Card-testing attack**: repeated small failed payments on one fictional card. Card-velocity rules raise risk to block; DGIM estimate rises for that device/card; Bloom reports `possibly_present` after the first insert; Apriori surfaces `card_velocity + failed_payment + country_mismatch`.
+1. Run **Everyday payments**: 8 independent events, all allowed. Bloom reports `definitely_absent` on first sightings (benign events are not inserted); DGIM bits stay 0; Apriori has few/no patterns.
+2. Run **Card-testing attack**: repeated small failed payments on one fictional card. Card-velocity rules raise risk to block; DGIM estimate rises for that device/card; Bloom reports `possibly_present` after the first high-risk insert; Apriori surfaces `card_velocity + failed_payment + country_mismatch` (Bloom/DGIM markers are excluded from baskets so domain signals stay visible).
 3. Run **Repeated free-trial abuse**: reused device cycles signup/trial/usage/cancel with disposable email. Device/trial rules plus corroborated Bloom/DGIM signals move later trials to block.
-4. Run **Shared campus Wi-Fi**: 8 legitimate accounts share one IP with distinct devices. Shared IP alone (+10) stays allowed; Bloom positives are not treated as proof; DGIM stays 0.
-5. Reset and run **Mixed traffic**: attacks + legitimate travelers (FP) + stealth abuse (FN). Move the review threshold to compare precision/recall.
-6. Open **Algorithm explorer**: §A Apriori (support/confidence/lift), §B DGIM (estimate vs exact + buckets), §C Bloom (bit grids + FPP). Click **Advance 61s**: exact 60s window expires, Bloom persists (insert-only), DGIM is count-based (last 60 elements, not seconds).
+4. Run **Shared campus Wi-Fi**: 8 legitimate accounts share one IP with distinct devices. Shared IP alone (+10) stays allowed; Bloom positives are not treated as proof; DGIM stays 0. Benign identifiers are never inserted into the filters.
+5. Run **Low-and-slow reuse**: one device, a new disposable-email account every ~90 simulated seconds. The exact 60s window forgets each event (score 15, allow), while the persistent Bloom filter and the count-based DGIM window lift later events to review (35). Toggle **shadow mode** to see the exact-rules-only baseline per event; the ablation bar reports how many decisions flip.
+6. Reset and run **Mixed traffic**: attacks + legitimate travelers (FP) + stealth abuse (FN). Move the review threshold to compare precision/recall. Open the explorer's evaluation-only panel for `signal → label:abuse` rules with lift, plus the time-split check (mined on the first half, tested on the second).
+7. Open **Algorithm explorer**: §A Apriori (support/confidence/lift), §B DGIM (estimate vs exact + buckets + 1000-element scale demo), §C Bloom (bit grids + FPP). Click **Advance 61s**: exact 60s window expires, Bloom persists (insert-only), DGIM is count-based (last 60 elements, not seconds).
 7. Send custom events reusing a card/device across accounts. Export CSV for evidence.
 
 Playback speed changes visual delay only. Each event advances the clock 1s by default. Scenario runs use fresh `rN-` prefixes so runs don't share identities.
@@ -36,19 +37,19 @@ Playback speed changes visual delay only. Each event advances the clock 1s by de
 ```
 synthetic event -> validate -> advance clock/expire exact window
   -> Bloom query (before insert) -> DGIM update+estimate
-  -> exact window features -> weighted rules -> score/action
-  -> Bloom insert (after query) -> store event -> state/CSV
+  -> exact window features -> weighted rules -> score/action (+ shadow baseline)
+  -> Bloom insert if high-risk only -> store event -> state/CSV
 ```
 
-Labels (`legitimate/abuse/unknown`) never enter scoring, Bloom, DGIM, or Apriori baskets; they are used only for evaluation.
+Labels (`legitimate/abuse/unknown`) never enter scoring, Bloom, DGIM, or Apriori baskets; they are used only for evaluation and the offline label-as-item Apriori mode.
 
 ## Primary analytical algorithms (syllabus)
 
 | Algorithm | Where | What it does | Relation to score | Limitation |
 |---|---|---|---|---|
-| Apriori | `engine.py:Detector.apriori` | Level-wise frequent itemsets over per-event signal baskets (only fired indicators), subset pruning, support ≥12% default, size ≤3; plus confidence/lift rules | None — offline analysis only | Correlation ≠ causation; baskets are rule-derived so patterns can be circular; high support ≠ fraud |
-| DGIM | `algorithms/dgim.py`, per-device/card streams in `engine.py` | Classical buckets (powers of two, ≤2 per size, timestamps), expiry outside last 60 elements, estimate = sum − oldest/2 | Modest +10 `dgim_device_burst` only when estimate ≥5 AND current event carries failed/disposable/mismatch; never blocks alone (max +20 < review 35) | Approximate by design; window is last N elements, ≈60s only under 1-event/s playback |
-| Bloom Filter | `algorithms/bloom_filter.py`, `bloom_device`/`bloom_card` in `engine.py` | 512-bit, 3×BLAKE2b hashes; query-before-insert; `definitely_absent`/`possibly_present`; tracks inserts/queries/occupancy/theoretical FPP `(1−e^{−kn/m})^k` | Modest +10 `bloom_*_seen` only when corroborated (reuse/trial/disposable/failure); never blocks alone | False positives possible; no deletion (reset clears); positive ≠ proof |
+| Apriori | `engine.py:Detector.apriori` | Level-wise frequent itemsets over per-event signal baskets (only fired indicators, Bloom/DGIM markers excluded), subset pruning, support ≥12% default, size ≤3; plus confidence/lift rules. Offline `include_labels` mode adds `label:abuse/legitimate` as an item for `signal → label` rules with real lift, plus a time-split check (mine first half, test second) | None — offline analysis only | Correlation ≠ causation; baskets are rule-derived so patterns can be circular; high support ≠ fraud |
+| DGIM | `algorithms/dgim.py`, per-device/card streams in `engine.py` | Classical buckets (powers of two, ≤2 per size, timestamps), expiry outside last 60 elements, estimate = sum − oldest/2; `/api/dgim_demo` runs a 1000-element stream plotting estimate error and bucket count vs exact storage | Modest +10 `dgim_device_burst` only when estimate ≥5 AND current event carries failed/disposable/mismatch; never blocks alone (max +20 < review 35) | Approximate by design (≤~50% bound); window is last N elements, ≈60s only under 1-event/s playback |
+| Bloom Filter | `algorithms/bloom_filter.py`, `bloom_device`/`bloom_card` in `engine.py` | 512-bit, 3 keyed BLAKE2b hashes (`key=` per function); query-before-insert; `definitely_absent`/`possibly_present`; high-risk-only insertion (suspicious bit or review/block); tracks inserts/queries/occupancy/theoretical FPP `(1−e^{−kn/m})^k` | Modest +10 `bloom_*_seen` only when corroborated (reuse/trial/disposable/failure); never blocks alone | False positives possible; no deletion (reset clears); positive ≠ proof; feedback-loop risk (past flags raise future hits — bounded by the corroboration requirement) |
 
 Exact 60s deque + reference counters remain the enforcement source so classroom thresholds stay deterministic. DGIM/Bloom are shown separately from exact counts in the inspector and explorer.
 
@@ -76,6 +77,8 @@ Defaults: review 35, block 65. Current event included in window features.
 
 Cancel events update context and score 0. Score is a heuristic, **not a probability**. Fictional aliases only. Blocked events still enter history for teaching; the model prevents nothing real.
 
+Every event also records a **shadow baseline** (`base_score`, exact-rules-only) so the dashboard can show what the decision would be without Bloom/DGIM. Bursty attacks are already decided by exact rules (0 flips — report this honestly); the low-and-slow scenario is where the persistent structures add value (2 of 7 flip allow→review).
+
 ## Evaluation semantics
 
 - Review **or** block = positive; allow = negative; unknown excluded; per-event.
@@ -95,9 +98,9 @@ Migration note: versions before this change used Count-Min Sketch for lifetime d
 - `engine.py`: detection, exact window, Bloom/DGIM integration, Apriori + rules, scenarios.
 - `algorithms/bloom_filter.py`: standard Bloom filter.
 - `algorithms/dgim.py`: classical DGIM.
-- `server.py`: loopback HTTP, `/api/state|event|scenario|reset|advance|thresholds|config|inspect`, CSV export.
-- `static/`: dashboard + §A/B/C explorer, no third-party deps.
-- `tests/test_engine.py`: 32 tests (engine, Apriori, DGIM, Bloom, integration).
+- `server.py`: loopback HTTP, `/api/state|event|scenario|reset|advance|thresholds|config|inspect|dgim_demo`, CSV export.
+- `static/`: dashboard + §A/B/C explorer, shadow toggle, DGIM scale demo, no third-party deps.
+- `tests/test_engine.py`: 37 tests (engine, Apriori incl. aux-exclusion/label-eval/time-split, DGIM incl. 1000-element trade-off, Bloom incl. keyed hashing/conditional insert, low-and-slow shadow integration).
 
 ```sh
 python3 -m unittest discover -s tests -v
