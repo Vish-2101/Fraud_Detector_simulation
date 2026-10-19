@@ -1,7 +1,5 @@
 /* Radar Lab UI. No third-party JS; SVG/CSS only. */
 let state = null;
-let catalog = [];
-let defaultReplay = {};
 let selectedId = null;
 let queue = [];
 let playing = false;
@@ -109,7 +107,7 @@ function renderEvents() {
   const empty = $('empty');
   empty.classList.toggle('hidden', rows.length > 0);
   if (!rows.length && state.total) empty.innerHTML = '<div>⌁</div><h3>No matching events</h3><p>Choose another decision filter.</p>';
-  else if (!state.total) empty.innerHTML = '<div>⌁</div><h3>Your event stream starts here</h3><p>Load a dataset or run a scenario.</p>';
+  else if (!state.total) empty.innerHTML = '<div>⌁</div><h3>Your event stream starts here</h3><p>Press Play or run a scenario.</p>';
   if (!(state.events || []).some(e => e.id === selectedId)) selectedId = state.events?.[0]?.id || null;
   $('events').innerHTML = rows.map(e => {
     const v = eventView(e);
@@ -312,7 +310,7 @@ function renderAprioriBaskets() {
 function renderEvidence() {
   const ev = state.evaluation;
   if (!ev) {
-    $('confusion').innerHTML = '<p class="hint">Playback state only. Open this tab after loading a dataset to compute full evidence.</p>';
+    $('confusion').innerHTML = '<p class="hint">Playback state only. Open this tab after replaying the synthetic demo to compute full evidence.</p>';
     return;
   }
   const key = $('evidence-view-select').value;
@@ -344,8 +342,6 @@ function renderEvidence() {
   const ablation = ev.ablation || [];
   const maxFlip = Math.max(1, ...ablation.map(a => a.flips));
   $('ablation').innerHTML = ablation.length ? ablation.map(a => `<div class="pattern"><div style="display:flex;justify-content:space-between;gap:10px"><span>${esc(a.rule)}</span><b style="margin:0">${a.flips} flip${a.flips === 1 ? '' : 's'} / ${a.events} events</b></div><div style="height:7px;background:var(--line);border-radius:5px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;width:${a.flips / maxFlip * 100}%;background:var(--red)"></i></div></div>`).join('') : '<p class="hint">No rule-ablation data on the test split.</p>';
-  const rows = ev.stripe_comparison || [];
-  $('stripe-table').innerHTML = rows.length ? `<table class="table-compact"><thead><tr><th>ID</th><th>TYPE</th><th>AMOUNT</th><th>OUR SCORE</th><th>OUR ACTION</th><th>STRIPE RISK LEVEL</th><th>STRIPE SCORE</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.id)}</td><td>${esc(r.type)}</td><td>${num(r.amount, 2)}</td><td>${num(r.score, 1)}</td><td><span class="badge ${esc(r.action)}">${esc(r.action)}</span></td><td>${esc(r.stripe_risk_level ?? '—')}</td><td>${esc(r.stripe_risk_score ?? '—')}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">No Stripe risk fields in this session. Load the Stripe sample to compare.</p>';
 }
 
 function svgPrChart(points) {
@@ -437,36 +433,14 @@ function stopPlayback() {
   updateControls();
 }
 
-async function loadCatalog() {
-  try {
-    const data = await apiGet('datasets');
-    catalog = data.datasets || [];
-    defaultReplay = data.default || {};
-    const select = $('dataset');
-    select.innerHTML = catalog.map(d => `<option value="${esc(d.name)}">${esc(d.label)}${d.available ? '' : ' · prepare first'}</option>`).join('');
-    if (data.default?.dataset) select.value = data.default.dataset;
-    else select.value = 'synthetic';
-  } catch (error) { toast(error.message); }
-}
-
-async function loadDataset(name) {
-  const meta = catalog.find(d => d.name === name);
-  if (!meta) { toast('Unknown dataset.'); return; }
-  if (!meta.available) { toast(`Dataset not available. Run: ${meta.prepare}`); return; }
+async function loadSynthetic() {
   stopPlayback();
   try {
-    const useDefault = defaultReplay?.dataset === name;
-    const limit = useDefault && defaultReplay?.sample ? defaultReplay.sample
-                  : name === 'stripe_fixture' ? 40 : 2000;
-    const request = {dataset: name, limit};
-    if (useDefault && defaultReplay?.window_seconds) request.window_seconds = defaultReplay.window_seconds;
-    const response = await api('replay', request);
+    const response = await api('replay', {dataset: 'synthetic'});
     queue = response.events || [];
     selectedId = null;
-    const s = await apiGet('state?light=1');
-    render(s);
-    $('run-status').textContent = `Loaded ${queue.length} ${meta.label} events (time-contiguous). Press Play or Step.`;
-    if (name === 'ieee_cis' && limit === 2000) $('run-status').textContent += ' UI playback capped at 2,000; use --sample for a larger server replay.';
+    render(await apiGet('state?light=1'));
+    $('run-status').textContent = `Loaded ${queue.length} synthetic events (time-contiguous). Press Play or Step.`;
     updateControls();
   } catch (error) { toast(error.message); }
 }
@@ -591,7 +565,7 @@ function applyPrefs() {
 /* ---------- guided demo ---------- */
 const guidedSteps = [
   {caption: '<b>Welcome to Radar Lab.</b> This is an independent educational simulation of payment and free-trial abuse detection, not Stripe software. We will demonstrate live scoring, then Bloom, DGIM, Apriori and temporal evidence in under five minutes.', action: async () => switchTab('live')},
-  {caption: '<b>Step 1 — load the synthetic fixture.</b> The same event schema is used by real IEEE-CIS replay and Stripe-format fixtures. Labels are carried only for evaluation; they never enter scoring.', action: async () => { await loadCatalog(); await loadDataset('synthetic'); switchTab('live'); }},
+  {caption: '<b>Step 1 — load the synthetic demo.</b> The committed fixture carries five event types and authored labels. Labels are carried only for evaluation; they never enter scoring.', action: async () => { await loadSynthetic(); switchTab('live'); }},
   {caption: '<b>Step 2 — everyday payments.</b> Eight independent events stay allowed. The exact window is quiet, Bloom sees fresh identifiers, and DGIM bits stay 0.', action: async () => { await runScenario('normal', true); switchTab('live'); }},
   {caption: '<b>Step 3 — card testing.</b> Repeated small failures on one card raise card velocity. The exact rule alone can reach block; Bloom and DGIM add corroborated signals, never proof.', action: async () => { await runScenario('card_testing', true); switchTab('live'); }},
   {caption: '<b>Step 4 — low-and-slow reuse.</b> Each signup is 90 seconds apart, so the 60-second exact window forgets it. The persistent Bloom filter and count-based DGIM lift later events from allow to review. Switch the shadow view to “Exact rules only” to see the gap.', action: async () => { await runScenario('low_slow', true); $('shadow-view').value = 'exact'; render(state); switchTab('live'); }},
@@ -599,7 +573,7 @@ const guidedSteps = [
   {caption: '<b>Step 6 — DGIM.</b> Estimate suspicious 1s in the last N stream elements with O(log²N) buckets. The worst-case stream shows the estimate tracking the exact count while bucket storage stays far below exact storage.', action: async () => { await dgimRunDemo('worst'); switchTab('dgim'); }},
   {caption: '<b>Step 7 — Apriori.</b> Mine co-occurring signals offline. Fixed 12% support hides fraud patterns at 3.5% prevalence, so use the auto-suggested support and compare all baskets with the fraud-only subset. Co-occurrence is not causation.', action: async () => { await aprioriRunDemo(); switchTab('apriori'); }},
   {caption: '<b>Step 8 — Evidence.</b> Temporal split: first 70% by event time for tuning/training, last 30% held out. Compare exact rules, the learned baseline and rules+Bloom/DGIM on PR-AUC, recall@1%/5% FPR and per-rule ablations. Report inactive rules honestly.', action: async () => { await refreshFull(); switchTab('evidence'); }},
-  {caption: '<b>Wrap-up.</b> The model is deliberately transparent: proxy signals are documented, some rules cannot fire on IEEE-CIS, Bloom/DGIM are approximate, and sandbox Stripe data is not real fraud. Use the README table when writing the report.', action: async () => switchTab('evidence')},
+  {caption: '<b>Wrap-up.</b> The model is deliberately transparent: proxy signals are documented, Bloom/DGIM are approximate, and labels are authored for teaching. Use the Evidence tab and CSV export when writing the report.', action: async () => switchTab('evidence')},
 ];
 
 async function guidedGo(index) {
@@ -626,11 +600,6 @@ function closeGuided() {
 /* ---------- event wiring ---------- */
 function wire() {
   document.querySelectorAll('.nav').forEach(button => button.onclick = () => switchTab(button.dataset.tab));
-  $('load-dataset').onclick = () => loadDataset($('dataset').value);
-  $('dataset').onchange = () => {
-    const meta = catalog.find(d => d.name === $('dataset').value);
-    if (meta && !meta.available) toast(`Prepare first: ${meta.prepare}`);
-  };
   $('play').onclick = async () => {
     if (!queue.length) return;
     playing = true; paused = false;
@@ -796,11 +765,7 @@ async function boot() {
   wire();
   updateBloomSizing();
   updateControls();
-  await loadCatalog();
-  const initial = $('dataset').value;
-  const meta = catalog.find(d => d.name === initial);
-  if (meta?.available) await loadDataset(initial);
-  else { try { render(await apiGet('state')); } catch (error) { toast(error.message); } }
+  await loadSynthetic();
 }
 
 boot();

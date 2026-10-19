@@ -1,4 +1,4 @@
-"""Educational stream detector. Synthetic identifiers only; no Stripe integration.
+"""Educational stream detector. Synthetic identifiers only; no external services.
 
 Primary analytical algorithms (syllabus): Apriori, DGIM, Bloom Filter.
 Decision layer: transparent weighted risk rules -> allow/review/block.
@@ -50,7 +50,7 @@ class Detector:
     WINDOW = 60  # backwards-compatible default (instance: window_seconds)
     DGIM_WINDOW = 60
     DGIM_THRESHOLD = 5
-    LIMIT = 60000  # supports a 50k IEEE-CIS replay; still session-bounded
+    LIMIT = 60000  # session-bounded; the synthetic demo stays far below this
     TYPES = {'payment', 'signup', 'trial', 'usage', 'cancel'}
     APRIORI_MAX_EVENTS = 5000
 

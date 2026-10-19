@@ -15,7 +15,7 @@ from datasets import catalog, load_dataset
 ROOT = Path(__file__).parent
 detector = Detector()
 lock = RLock()
-DEFAULT_REPLAY = {'dataset': None, 'sample': None, 'window_seconds': None}
+DEFAULT_REPLAY = {'dataset': 'synthetic', 'sample': None, 'window_seconds': None}
 
 
 def replay_payload(dataset, limit=None, process=False, window_seconds=None):
@@ -111,8 +111,7 @@ class Handler(BaseHTTPRequestHandler):
                           'bloom_device', 'bloom_card', 'bloom_inserted',
                           'dgim_bit', 'dgim_est', 'dgim_exact',
                           'shadow_base', 'shadow_flipped',
-                          'baseline_score', 'baseline_action',
-                          'stripe_risk_level', 'stripe_risk_score', 'source']
+                          'baseline_score', 'baseline_action', 'source']
                 writer = csv.DictWriter(out, fields, extrasaction='ignore')
                 writer.writeheader()
                 for e in detector.events:
@@ -180,11 +179,9 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path == '/api/config':
                     self._config(body)
                 elif self.path == '/api/replay':
-                    dataset = body.get('dataset')
-                    if not dataset:
-                        dataset = DEFAULT_REPLAY.get('dataset')
-                    if not dataset:
-                        raise ValueError('Provide dataset (synthetic, ieee_cis, ieee_cis_fixture, stripe_fixture).')
+                    dataset = body.get('dataset') or DEFAULT_REPLAY['dataset']
+                    if dataset != 'synthetic':
+                        raise ValueError('Only the synthetic dataset is available.')
                     limit = body.get('limit')
                     if limit is None and dataset == DEFAULT_REPLAY.get('dataset'):
                         limit = DEFAULT_REPLAY.get('sample')
@@ -196,21 +193,6 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(replay_payload(dataset, limit=limit,
                                                      process=bool(body.get('process')),
                                                      window_seconds=window))
-                elif self.path == '/api/stripe_webhook':
-                    from adapters.stripe_events import map_events
-                    raw = body.get('events') if 'events' in body else body
-                    if isinstance(raw, dict) and raw.get('object') == 'event':
-                        raw = [raw]
-                    if not isinstance(raw, list):
-                        raise ValueError('Provide a Stripe event, an events list, or {events: [...]}.')
-                    events = map_events(raw)
-                    if events and detector.events and events[0]['ts'] < detector.clock:
-                        detector.reset()
-                    for event in events:
-                        detector.process(event)
-                    state = detector.state()
-                    state['webhook'] = {'received': len(raw), 'mapped': len(events)}
-                    return self.reply(state)
                 elif self.path == '/api/bloom/config':
                     size = body.get('size', 512)
                     hashes = body.get('num_hashes', 3)
@@ -320,23 +302,20 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8765)
-    parser.add_argument('--dataset', default=None,
-                        help='Preselect a dataset: synthetic, ieee_cis, ieee_cis_fixture, stripe_fixture')
     parser.add_argument('--sample', type=int, default=None,
-                        help='Time-contiguous replay prefix size (used with --dataset)')
+                        help='Time-contiguous synthetic replay prefix size')
     parser.add_argument('--window-seconds', type=int, default=None,
-                        help='Exact event-time window; defaults to 60 synthetic / 3600 IEEE-CIS')
+                        help='Exact event-time window; defaults to 60')
     args = parser.parse_args()
-    if args.dataset:
-        DEFAULT_REPLAY.update(dataset=args.dataset, sample=args.sample,
-                              window_seconds=args.window_seconds)
-        try:
-            meta = {d['name']: d for d in catalog()}[args.dataset]
-            detector.dataset = {'name': args.dataset, 'source': args.dataset,
-                                'window_seconds': args.window_seconds or meta['window_seconds']}
-            detector.window_seconds = detector.WINDOW = int(args.window_seconds or meta['window_seconds'])
-        except KeyError:
-            print(f'Unknown --dataset {args.dataset}', flush=True)
+    if args.sample is not None:
+        if args.sample < 1:
+            parser.error('--sample must be a positive integer')
+        DEFAULT_REPLAY['sample'] = args.sample
+    if args.window_seconds is not None:
+        if args.window_seconds < 1:
+            parser.error('--window-seconds must be a positive integer')
+        DEFAULT_REPLAY['window_seconds'] = args.window_seconds
+        detector.window_seconds = detector.WINDOW = args.window_seconds
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
     print(f'Radar Lab is running at http://127.0.0.1:{args.port}', flush=True)
     print('Press Ctrl+C to stop. All data stays in memory on this computer.', flush=True)

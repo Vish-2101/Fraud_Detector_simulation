@@ -1,19 +1,13 @@
-import json
 import math
 import random
 import unittest
-from pathlib import Path
 
 import baseline
-from adapters.ieee_cis import map_transaction, schema_valid as ieee_schema_valid
-from adapters.stripe_events import map_events, schema_valid as stripe_schema_valid
 from algorithms.bloom_filter import BloomFilter, RotatingBloomFilter
 from algorithms.dgim import DGIM, long_stream_demo
-from datasets import load_dataset
+from datasets import DATASETS, load_dataset
 from engine import Detector
 from evaluation import evaluate_view, pr_curve, recall_at_fpr, temporal_split
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def payment(**changes):
@@ -52,14 +46,6 @@ class LabelLeakageTests(unittest.TestCase):
         self.assertEqual(a.bloom_device.to_state()['bits'], b.bloom_device.to_state()['bits'])
         self.assertEqual(a.dgim_state('device-a')['estimate'], b.dgim_state('device-a')['estimate'])
         self.assertEqual(a.apriori()['itemsets'], b.apriori()['itemsets'])
-
-    def test_stripe_risk_fields_do_not_score(self):
-        base = payment(ts=100)
-        a, b = Detector(), Detector()
-        ea = a.process(dict(base, stripe_risk_level='highest', stripe_risk_score=99))
-        eb = b.process(dict(base, stripe_risk_level='normal', stripe_risk_score=1))
-        self.assertEqual(ea['score'], eb['score'])
-        self.assertEqual(ea['action'], eb['action'])
 
     def test_class_comparison_does_not_add_label_items(self):
         d = Detector()
@@ -161,64 +147,31 @@ class DgimBoundTests(unittest.TestCase):
         self.assertLessEqual(len(d.dgim_card_streams), 16)
 
 
-class AdapterTests(unittest.TestCase):
-    def test_ieee_fixture_maps_to_valid_events(self):
-        events, meta = load_dataset('ieee_cis_fixture')
+class DatasetRegistryTests(unittest.TestCase):
+    def test_only_synthetic_dataset_is_registered(self):
+        self.assertEqual(set(DATASETS), {'synthetic'})
+        with self.assertRaises(ValueError):
+            load_dataset('ieee_cis')
+
+    def test_synthetic_fixture_rows_are_valid_events(self):
+        events, meta = load_dataset('synthetic')
         self.assertGreaterEqual(len(events), 400)
+        self.assertEqual(meta['name'], 'synthetic')
         for event in events:
-            self.assertTrue(ieee_schema_valid(event))
-            self.assertIn(event['label'], ('abuse', 'legitimate'))
-            self.assertEqual(event['type'], 'payment')
-            self.assertFalse(event['failed'])
-            self.assertEqual(event['source'], 'ieee_cis')
-
-    def test_stripe_fixture_maps_to_valid_events(self):
-        path = ROOT / 'fixtures' / 'stripe_events_sample.json'
-        raw = json.loads(path.read_text(encoding='utf-8'))
-        events = map_events(raw)
-        self.assertGreaterEqual(len(events), 30)
-        for event in events:
-            self.assertTrue(stripe_schema_valid(event))
-            self.assertIn('stripe_risk_level', event)
+            self.assertEqual(event['source'], 'synthetic')
+            self.assertIn(event['label'], ('abuse', 'legitimate', 'unknown'))
             self.assertIn(event['type'], {'payment', 'signup', 'trial', 'usage', 'cancel'})
-            self.assertEqual(event['source'], 'stripe')
-
-    def test_ieee_active_rules_reflect_payment_only_mapping(self):
-        from adapters.ieee_cis import active_rules
-        events, _ = load_dataset('ieee_cis_fixture', limit=100)
-        rules = active_rules(events)
-        self.assertTrue(rules['card_velocity'])
-        self.assertTrue(rules['large_amount'])
-        self.assertTrue(rules['country_mismatch'])
-        for name in ('device_reuse', 'repeat_trial', 'temporary_email',
-                     'free_forwarding_email', 'shared_ip', 'heavy_usage',
-                     'trial_after_cancel', 'bloom_device_seen'):
-            self.assertFalse(rules[name], f'{name} must be inactive for payment-only data')
-
-    def test_ieee_proxy_mapping(self):
-        event = map_transaction({
-            'TransactionID': '1', 'TransactionDT': '100', 'TransactionAmt': '50',
-            'card1': '123', 'card2': '1', 'card3': '2', 'card5': '3',
-            'addr1': '10', 'addr2': '20', 'dist1': '5', 'P_emaildomain': 'mailinator.com',
-            'isFraud': '1'})
-        self.assertTrue(ieee_schema_valid(event))
-        self.assertTrue(event['disposable'])
-        self.assertTrue(event['country_mismatch'])
-        self.assertEqual(event['label'], 'abuse')
-        event2 = map_transaction({
-            'TransactionID': '2', 'TransactionDT': '101', 'TransactionAmt': '5',
-            'card1': '123', 'isFraud': '0'})
-        self.assertIsNone(event2['device'])
-        self.assertFalse(event2['country_mismatch'])
+            for key in ('ts', 'amount', 'account', 'card', 'ip'):
+                self.assertIn(key, event)
 
 
 class ReplayAndBaselineTests(unittest.TestCase):
     def test_replay_of_committed_fixture_is_deterministic(self):
-        events_a, _ = load_dataset('ieee_cis_fixture', limit=250)
-        events_b, _ = load_dataset('ieee_cis_fixture', limit=250)
+        events_a, _ = load_dataset('synthetic', limit=250)
+        events_b, _ = load_dataset('synthetic', limit=250)
         self.assertEqual(events_a, events_b)
-        a = Detector(window_seconds=3600)
-        b = Detector(window_seconds=3600)
+        a = Detector(window_seconds=60)
+        b = Detector(window_seconds=60)
         for event in events_a:
             a.process(dict(event))
         for event in events_b:
@@ -228,18 +181,6 @@ class ReplayAndBaselineTests(unittest.TestCase):
         self.assertEqual(keys, [(e['id'], e['time'], e['score'], e['action'],
                                  e['bloom']['device_seen'], e['dgim']['device_est'])
                                 for e in b.events])
-
-    def test_stripe_fixture_replay_is_deterministic(self):
-        events_a, _ = load_dataset('stripe_fixture')
-        events_b, _ = load_dataset('stripe_fixture')
-        self.assertEqual(events_a, events_b)
-        a, b = Detector(window_seconds=3600), Detector(window_seconds=3600)
-        for event in events_a:
-            a.process(dict(event))
-        for event in events_b:
-            b.process(dict(event))
-        self.assertEqual(a.state()['counts'], b.state()['counts'])
-        self.assertEqual([e['score'] for e in a.events], [e['score'] for e in b.events])
 
     def test_baseline_json_matches_sklearn_transform(self):
         try:

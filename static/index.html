@@ -17,16 +17,15 @@
   <button class="nav" data-tab="apriori"><span>⌘</span> Apriori</button>
   <button class="nav" data-tab="evidence"><span>▤</span> Evidence</button>
   <div class="side-note"><span class="status-dot"></span> Local simulation
-    <p>Synthetic + real-data replay + Stripe-format fixtures. Explainable rules, no payment credentials.</p>
+    <p>Committed synthetic scenarios only. Explainable rules, no payment credentials.</p>
     <small>Independent educational prototype,<br>not Stripe software.</small></div>
 </aside>
 
 <main>
 <header class="topbar">
   <div class="top-group dataset-group">
-    <label for="dataset">DATASET</label>
-    <select id="dataset" aria-label="Dataset"></select>
-    <button class="button secondary" id="load-dataset">Load</button>
+    <label>MODE</label>
+    <strong>Synthetic demo</strong>
   </div>
   <div class="top-group playback">
     <button class="button primary" id="play" disabled>▶ Play</button>
@@ -80,7 +79,7 @@
       <button class="icon-button" id="advance" title="Advance beyond the exact window">+ window</button>
     </div>
   </div>
-  <div class="run-info"><span id="run-status" role="status">Ready · choose a dataset or scenario</span>
+  <div class="run-info"><span id="run-status" role="status">Ready · synthetic demo</span>
     <span>WINDOW <b id="window-length">60s</b> · EVENT TIME <b id="clock">00:00</b> · <span id="dataset-mode">synthetic</span></span></div>
 
   <div class="monitor-grid">
@@ -111,7 +110,7 @@
         <select id="filter" aria-label="Filter events"><option value="all">All decisions</option><option value="allow">Allowed</option><option value="review">Review</option><option value="block">Blocked</option></select>
       </div>
       <div class="table-scroll"><table><thead><tr><th>EVENT / ACCOUNT</th><th>TIME</th><th>RISK SCORE</th><th>DECISION</th></tr></thead><tbody id="events"></tbody></table>
-        <div class="empty" id="empty"><div>⌁</div><h3>Your event stream starts here</h3><p>Load a dataset or run a scenario.</p></div></div>
+        <div class="empty" id="empty"><div>⌁</div><h3>Your event stream starts here</h3><p>Press Play or run a scenario.</p></div></div>
       <div class="table-footer">Click a row for evidence. Click a device/card/account in the inspector for its timeline. Showing the latest 150.</div>
     </div>
     <div class="card inspector">
@@ -262,8 +261,7 @@
     <div class="card"><div class="card-title"><h2>Precision–recall curve</h2><span class="chip" id="evidence-prauc">PR-AUC —</span></div><div id="pr-chart" class="svg-wrap"></div><div class="fpp-row"><div><span>recall @ 1% FPR</span><strong id="recall-1">—</strong></div><div><span>recall @ 5% FPR</span><strong id="recall-5">—</strong></div><div><span>labeled test events</span><strong id="test-n">—</strong></div></div></div>
   </div>
   <div class="card"><div class="card-title"><h2>Per-rule ablation</h2><span class="chip">flip counts when removed</span></div><div id="ablation"></div><p class="hint">A flip means removing that rule changes review/block to another action on the temporal test split. Counts of 0 are honest: many rules overlap or never fire on a dataset.</p></div>
-  <div class="card"><div class="card-title"><h2>Stripe risk-level comparison</h2><span class="chip">display only</span></div><div id="stripe-table" class="table-scroll"></div><p class="hint">Stripe <code>risk_level</code>/<code>risk_score</code> are copied for comparison only; they never enter scoring, Bloom, DGIM or Apriori. Sandbox data is deterministic and not real fraud.</p></div>
-  <div class="card advantages"><div class="card-title"><h2>Read this honestly</h2></div><div class="two-col"><div><h4>What the numbers mean</h4><ul><li>Positive = review or block under the current review threshold.</li><li>PR-AUC is average precision over the held-out test split.</li><li>Recall@FPR is the best recall at or below that false-positive rate.</li></ul></div><div><h4>Limitations</h4><ul><li>Synthetic labels are authored; IEEE-CIS labels are real but the mapping is proxy-heavy.</li><li>Stripe test outcomes are not ground truth for fraud.</li><li>Temporal splits reduce leakage but one split is not a production estimate.</li></ul></div></div></div>
+  <div class="card advantages"><div class="card-title"><h2>Read this honestly</h2></div><div class="two-col"><div><h4>What the numbers mean</h4><ul><li>Positive = review or block under the current review threshold.</li><li>PR-AUC is average precision over the held-out test split.</li><li>Recall@FPR is the best recall at or below that false-positive rate.</li></ul></div><div><h4>Limitations</h4><ul><li>Labels are authored for teaching, so results demonstrate mechanics, not real-world fraud rates.</li><li>The fixture is small and synthetic; one split is not a production estimate.</li><li>Proxy signals and approximate algorithms are documented in the README.</li></ul></div></div></div>
 </section>
 
 <footer>RADAR LAB <span>event-time stream → features → rules → action → temporal evaluation</span></footer>
@@ -271,7 +269,7 @@
 
 <div id="guided-overlay" class="guided hidden" role="dialog" aria-modal="true" aria-label="Guided demo">
   <div class="guided-card">
-    <div class="guided-top"><span class="chip" id="guided-step">1 / 8</span><button class="icon-button" id="guided-close">×</button></div>
+    <div class="guided-top"><span class="chip" id="guided-step">1 / 10</span><button class="icon-button" id="guided-close">×</button></div>
     <div class="guided-caption" id="guided-caption"></div>
     <div class="guided-progress"><i id="guided-progress"></i></div>
     <div class="guided-actions"><button class="button secondary" id="guided-prev">← Back</button><button class="button primary" id="guided-next">Next →</button></div>

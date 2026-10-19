@@ -194,23 +194,4 @@ def evaluation_report(events, review_threshold, block_threshold, train_fraction=
         'thresholds': {'review': review_threshold, 'block': block_threshold},
         'views': views,
         'ablation': rule_ablation(test, review_threshold),
-        'stripe_comparison': stripe_comparison(events),
     }
-
-
-def stripe_comparison(events):
-    """Side-by-side table for events that carry Stripe risk fields (display only)."""
-    rows = []
-    for e in events:
-        if e.get('stripe_risk_level') is None and e.get('stripe_risk_score') is None:
-            continue
-        rows.append({
-            'id': e.get('id'),
-            'type': e.get('type'),
-            'amount': e.get('amount'),
-            'score': e.get('score'),
-            'action': e.get('action'),
-            'stripe_risk_level': e.get('stripe_risk_level'),
-            'stripe_risk_score': e.get('stripe_risk_score'),
-        })
-    return rows[-100:]

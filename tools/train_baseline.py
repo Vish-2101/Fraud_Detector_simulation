@@ -1,11 +1,12 @@
 """Train the label-free logistic-regression baseline (sklearn or stdlib fallback).
 
 Run:
-  python tools/train_baseline.py --dataset ieee_cis_fixture
-  python tools/train_baseline.py --dataset ieee_cis --out models/baseline.json
+  python tools/train_baseline.py
+  python tools/train_baseline.py --out models/baseline.json
 
-Only label-free features are used. Labels select train rows and provide y, but
-they never enter engine scoring, Bloom, DGIM or Apriori baskets.
+Trains on the committed synthetic demo. Only label-free features are used.
+Labels select train rows and provide y, but they never enter engine scoring,
+Bloom, DGIM or Apriori baskets.
 
 The server reads models/baseline.json with baseline.py (pure Python).
 """
@@ -24,7 +25,8 @@ from engine import Detector
 from evaluation import temporal_split
 
 
-def collect(dataset, train_fraction=0.7):
+def collect(train_fraction=0.7):
+    dataset = 'synthetic'
     events, meta = load_dataset(dataset)
     window = int(meta.get('window_seconds', 60))
     detector = Detector(window_seconds=window, dgim_window=window)
@@ -107,13 +109,11 @@ def fit_stdlib(rows, labels):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', default='ieee_cis_fixture',
-                        help='synthetic | ieee_cis | ieee_cis_fixture | stripe_fixture')
     parser.add_argument('--out', default='models/baseline.json')
     parser.add_argument('--train-fraction', type=float, default=0.7)
     args = parser.parse_args()
 
-    rows, labels, meta = collect(args.dataset, args.train_fraction)
+    rows, labels, meta = collect(args.train_fraction)
     positive = sum(labels)
     negative = len(labels) - positive
     if positive < 2 or negative < 2:

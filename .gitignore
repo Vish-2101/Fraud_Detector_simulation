@@ -1,8 +1,6 @@
 __pycache__/
 *.pyc
 .DS_Store
-data/raw/
-data/processed/
 .venv/
 venv/
 *.egg-info/
