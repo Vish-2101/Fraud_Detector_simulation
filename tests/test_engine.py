@@ -20,7 +20,9 @@ class DetectorTests(unittest.TestCase):
 
     def test_shared_ip_is_not_enough(self):
         d = Detector()
-        rows = [d.process(e) for e in d.scenario('shared_ip')]
+        rows = [d.process(self.event(type='signup', account=f'campus-{i}',
+                                     device=f'campus-device-{i}', ip='campus-ip'))
+                for i in range(8)]
         self.assertTrue(all(e['action'] == 'allow' for e in rows))
         self.assertEqual(rows[-1]['score'], 10)
 
@@ -160,11 +162,14 @@ class DetectorTests(unittest.TestCase):
         self.assertTrue(all('dgim_device_burst' not in r['items'] for r in nrows))
         self.assertEqual(nrows[-1]['dgim']['device_est'], 0)
 
-    def test_low_slow_shadow_flips(self):
-        # Low-and-slow: exact 60s window forgets each 90s-spaced event, but
-        # persistent Bloom + count-based DGIM lift later events allow->review.
+    def test_persistent_signals_flip_shadow(self):
+        # 90s-spaced events fall outside the 60s exact window, but persistent
+        # Bloom + count-based DGIM lift later events allow->review.
         d = Detector()
-        rows = [d.process(e) for e in d.scenario('low_slow')]
+        rows = [d.process(self.event(type='signup', account=f'slow-{i}',
+                                     device='slow-laptop', disposable=True,
+                                     label='abuse', step=90))
+                for i in range(7)]
         self.assertTrue(all(r['shadow']['base_action'] == 'allow' for r in rows))
         flipped = [r for r in rows if r['shadow']['flipped']]
         self.assertGreaterEqual(len(flipped), 1)

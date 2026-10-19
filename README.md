@@ -52,7 +52,7 @@ python tools/make_fixtures.py
 ## Live tab
 
 - **Dataset replay** streams the committed synthetic fixture in event-time order.
-- **Scenarios**: `normal`, `card_testing`, `trial_abuse`, `shared_ip`, `mixed`, `low_slow`, `multi_account_device`, `low_slow_reuse`, `free_forwarding_email`, `shared_campus_wifi_fp_trap`.
+- **Scenarios**: `normal`, `card_testing`, `trial_abuse`, `multi_account_device`, `mixed`.
 - **Shadow view** switches the stream/inspector between three lenses:
   1. **Exact rules** — event-time window counters and domain rules only.
   2. **Learned baseline** — logistic regression over label-free features, exported as plain JSON.

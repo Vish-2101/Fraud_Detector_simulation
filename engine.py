@@ -614,9 +614,7 @@ class Detector:
 
     def scenario(self, name):
         params = self._params().get(name, {})
-        if name not in {'normal', 'card_testing', 'trial_abuse', 'shared_ip', 'mixed',
-                        'low_slow', 'multi_account_device', 'low_slow_reuse',
-                        'free_forwarding_email', 'shared_campus_wifi_fp_trap'}:
+        if name not in {'normal', 'card_testing', 'trial_abuse', 'multi_account_device', 'mixed'}:
             raise ValueError('Unknown scenario.')
         self.run_id += 1
         prefix = f'r{self.run_id}'
@@ -633,11 +631,6 @@ class Detector:
                 e.update(card=f'{prefix}-tested-card', device=f'{prefix}-bot', amount=1,
                          failed=True, country_mismatch=True, label='abuse')
                 rows.append(e)
-        elif name == 'shared_ip':
-            for i in range(8):
-                e = event(i)
-                e.update(type='signup', ip=f'{prefix}-campus-wifi')
-                rows.append(e)
         elif name == 'trial_abuse':
             cycles = int(params.get('accounts_per_device', 4))
             gap = float(params.get('inter_signup_gap', 1))
@@ -649,14 +642,6 @@ class Detector:
                              step=gap,
                              label='unknown' if kind == 'cancel' else 'abuse')
                     rows.append(e)
-        elif name == 'low_slow':
-            gap = float(params.get('inter_signup_gap', 90))
-            for i in range(7):
-                e = event(i)
-                e.update(type='signup', account=f'{prefix}-slow-user-{i}',
-                         device=f'{prefix}-slow-laptop', disposable=True,
-                         label='abuse', step=gap)
-                rows.append(e)
         elif name == 'multi_account_device':
             accounts = int(params.get('accounts_per_device', 6))
             gap = float(params.get('inter_signup_gap', 8))
@@ -668,36 +653,8 @@ class Detector:
                          disposable=(i % 2 == 0 or disposable_rate >= 0.5),
                          label='abuse', step=gap)
                 rows.append(e)
-        elif name == 'low_slow_reuse':
-            gap = float(params.get('inter_signup_gap', 90))
-            accounts = int(params.get('accounts_per_device', 7))
-            for i in range(accounts):
-                e = event(i)
-                e.update(type='signup', account=f'{prefix}-slow-user-{i}',
-                         device=f'{prefix}-slow-laptop', ip=f'{prefix}-slow-ip',
-                         disposable=True, label='abuse', step=gap,
-                         email_domain='mailinator.com')
-                rows.append(e)
-        elif name == 'free_forwarding_email':
-            accounts = int(params.get('accounts_per_device', 5))
-            gap = float(params.get('inter_signup_gap', 20))
-            for i in range(accounts):
-                e = event(i)
-                e.update(type='signup', device=f'{prefix}-forward-device-{i}',
-                         ip=f'{prefix}-forward-ip-{i}', disposable=False,
-                         forwarding_email=True, email_domain='duck.com',
-                         label='abuse', step=gap)
-                rows.append(e)
-        elif name == 'shared_campus_wifi_fp_trap':
-            accounts = int(params.get('accounts_per_device', 10))
-            for i in range(accounts):
-                e = event(i)
-                e.update(type='signup', ip=f'{prefix}-campus-wifi',
-                         disposable=(i == 0), email_domain='mailinator.com' if i == 0 else 'university.edu',
-                         label='legitimate')
-                rows.append(e)
         else:
-            for child in ['normal', 'card_testing', 'trial_abuse', 'shared_ip']:
+            for child in ['normal', 'card_testing', 'trial_abuse', 'multi_account_device']:
                 rows.extend(self.scenario(child))
             for i in range(3):
                 e = event(100 + i)
