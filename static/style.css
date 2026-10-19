@@ -10,15 +10,16 @@ body.dark{
 }
 *{box-sizing:border-box}
 html,body{margin:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg);font-size:14px;line-height:1.5}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg);font-size:17px;line-height:1.5}
 button,input,select{font:inherit;color:inherit}
+label{font-size:13px}
 button,select{cursor:pointer}
 button:disabled{cursor:default;opacity:.45}
 a{text-decoration:none;color:inherit}
 code{background:var(--purple-soft);padding:1px 5px;border-radius:4px}
 h1,h2,h3,h4,p{margin:0 0 8px}
-h1{font-size:30px;letter-spacing:-.8px}
-h2{font-size:16px}
+h1{font-size:42px;letter-spacing:-.8px}
+h2{font-size:21px}
 h4{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-top:10px}
 ul{margin:6px 0;padding-left:18px}
 li{margin:4px 0}
@@ -48,7 +49,7 @@ main{margin-left:224px;padding-bottom:40px}
 .playback .speed-label{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
 .playback input[type=range]{width:110px}
 .top-actions{margin-left:auto}
-.tab-panel{padding:26px 26px 10px;max-width:1500px}
+.tab-panel{padding:34px 26px 10px;max-width:1500px}
 .tab-panel.hidden,.hidden{display:none!important}
 .heading{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px}
 .eyebrow{font-size:10px;letter-spacing:1.5px;font-weight:750;color:var(--purple);margin-bottom:6px}
@@ -57,7 +58,7 @@ main{margin-left:224px;padding-bottom:40px}
 .demo-bar>div{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .demo-label{font-size:9px;letter-spacing:1.2px;color:var(--muted);font-weight:750}
 .why{font-size:12px;color:var(--muted)}
-.run-info{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin:8px 2px 14px}
+.run-info{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:8px 2px 14px}
 .run-info b{color:var(--ink)}
 .button{border:1px solid transparent;border-radius:8px;padding:8px 13px;font-size:12px;font-weight:650;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .button.primary{background:var(--purple);color:#fff}
@@ -74,7 +75,7 @@ label{font-size:11px;color:var(--muted)}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
 .stat>span{display:flex;justify-content:space-between;color:var(--muted);font-size:11px}
-.stat strong{display:block;font-size:27px;letter-spacing:-.8px;margin:4px 0}
+.stat strong{display:block;font-size:38px;letter-spacing:-.8px;margin:4px 0}
 .stat small{font-size:10px;color:var(--muted)}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted)}
 .dot.green{background:var(--green)}.dot.amber{background:var(--amber)}.dot.red{background:var(--red)}.dot.purple{background:var(--purple)}
@@ -85,7 +86,7 @@ label{font-size:11px;color:var(--muted)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);min-width:0}
 .card-title{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
 .chip{display:inline-block;background:var(--purple-soft);color:var(--purple);border-radius:20px;padding:3px 9px;font-size:10px;font-weight:700}
-.chart{height:156px;display:flex;align-items:flex-end;gap:4px;border-bottom:1px solid var(--line);padding-top:8px}
+.chart{height:220px;display:flex;align-items:flex-end;gap:4px;border-bottom:1px solid var(--line);padding-top:8px}
 .chart-bar{flex:1;min-width:4px;height:100%;display:flex;align-items:flex-end;position:relative}
 .bar-total{width:100%;background:var(--purple-soft);border-radius:3px 3px 0 0;position:relative;min-height:2px}
 .bar-flagged{position:absolute;bottom:0;left:0;right:0;background:var(--red);border-radius:3px 3px 0 0}
@@ -103,7 +104,7 @@ label{font-size:11px;color:var(--muted)}
 .thresholds label{display:flex;justify-content:space-between;margin:7px 0 2px}
 .risk-scale{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.8px;color:var(--muted);border-top:5px solid var(--green);border-image:linear-gradient(90deg,var(--green) 0 35%,var(--amber) 35% 65%,var(--red) 65% 100%) 1;padding-top:5px;margin-top:10px}
 .table-scroll{max-height:330px;overflow:auto;border:1px solid var(--line);border-radius:8px}
-table{width:100%;border-collapse:collapse;font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:15px}
 th{position:sticky;top:0;background:var(--card);text-align:left;color:var(--muted);font-size:9px;letter-spacing:.8px;padding:8px 10px;border-bottom:1px solid var(--line);z-index:1}
 td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
 tr.selected{background:var(--purple-soft)}
@@ -130,7 +131,7 @@ td small{display:block;color:var(--muted);font-size:10px}
 .feature-list b{color:var(--ink)}
 .inspect-id{margin-top:10px;font-size:10px;color:var(--muted);word-break:break-all}
 .link-button{border:0;background:none;color:var(--purple);font-size:inherit;padding:0;text-decoration:underline;cursor:pointer}
-.hint{font-size:11px;color:var(--muted);line-height:1.55}
+.hint{font-size:13px;color:var(--muted);line-height:1.55}
 .warning{background:rgba(188,136,55,.12);border-left:3px solid var(--amber);padding:8px 10px;border-radius:6px;font-size:11px;color:var(--ink)}
 .divider{height:1px;background:var(--line);margin:12px 0}
 .form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
@@ -179,16 +180,6 @@ td small{display:block;color:var(--muted);font-size:10px}
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);border-radius:9px;padding:10px 16px;font-size:12px;z-index:60;max-width:90vw}
 footer{display:flex;justify-content:space-between;gap:12px;padding:18px 26px;border-top:1px solid var(--line);font-size:9px;letter-spacing:1.2px;color:var(--muted)}
 footer span{letter-spacing:0;text-transform:none}
-
-body.presentation{font-size:17px}
-body.presentation h1{font-size:42px}
-body.presentation h2{font-size:21px}
-body.presentation .stat strong{font-size:38px}
-body.presentation .config-only{display:none}
-body.presentation .tab-panel{padding-top:34px}
-body.presentation .hint,body.presentation label,body.presentation .run-info{font-size:13px}
-body.presentation table{font-size:15px}
-body.presentation .chart{height:220px}
 
 @media(max-width:1200px){
   .sidebar{width:190px}.brand{font-size:23px}main{margin-left:190px}

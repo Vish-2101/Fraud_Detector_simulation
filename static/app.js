@@ -387,7 +387,6 @@ function svgLineChart(samples) {
 function updateControls() {
   $('play').disabled = playing || !queue.length;
   $('pause').disabled = !playing;
-  $('step').disabled = !queue.length;
   $('pause').textContent = paused ? 'Resume' : 'Pause';
 }
 const delay = () => Math.max(8, 1010 - Number($('speed').value || 650));
@@ -442,7 +441,7 @@ async function loadSynthetic() {
     queue = loadedEvents.slice();
     selectedId = null;
     render(await apiGet('state?light=1'));
-    $('run-status').textContent = `Loaded ${queue.length} synthetic events (time-contiguous). Press Play or Step.`;
+    $('run-status').textContent = `Loaded ${queue.length} synthetic events (time-contiguous). Press Play.`;
     updateControls();
   } catch (error) { toast(error.message); }
 }
@@ -486,19 +485,6 @@ async function resetSession() {
       : 'Session reset · ready for a new demonstration';
   } catch (error) { toast(error.message); }
   updateControls();
-}
-
-async function stepOnce() {
-  if (!queue.length) return;
-  paused = true;
-  const event = queue.shift();
-  try {
-    const s = await api('event', {...event, light: true});
-    render(s);
-    $('run-status').textContent = `Stepped one event · ${queue.length} remaining`;
-    updateControls();
-    await refreshFull();
-  } catch (error) { toast(error.message); }
 }
 
 /* ---------- demos ---------- */
@@ -564,9 +550,6 @@ function applyPrefs() {
   const dark = localStorage.getItem('radar-theme') === 'dark';
   document.body.classList.toggle('dark', dark);
   $('theme').textContent = dark ? 'Light' : 'Dark';
-  const presentation = localStorage.getItem('radar-presentation') === 'true';
-  document.body.classList.toggle('presentation', presentation);
-  $('present').textContent = presentation ? 'Exit presentation' : 'Presentation';
 }
 
 /* ---------- guided demo ---------- */
@@ -614,7 +597,6 @@ function wire() {
     await pump(token);
   };
   $('pause').onclick = () => { paused = !paused; updateControls(); $('run-status').textContent = paused ? 'Paused' : 'Replaying'; };
-  $('step').onclick = stepOnce;
   $('reset').onclick = resetSession;
   $('run-scenario').onclick = () => runScenario($('scenario').value, false);
   $('advance').onclick = async () => {
@@ -659,12 +641,6 @@ function wire() {
       render(s);
       $('run-status').textContent = 'Custom event evaluated · inspect the decision';
     } catch (error) { toast(error.message); }
-  };
-  $('present').onclick = () => {
-    const next = !document.body.classList.contains('presentation');
-    document.body.classList.toggle('presentation', next);
-    localStorage.setItem('radar-presentation', String(next));
-    $('present').textContent = next ? 'Exit presentation' : 'Presentation';
   };
   $('theme').onclick = () => {
     const dark = !document.body.classList.contains('dark');

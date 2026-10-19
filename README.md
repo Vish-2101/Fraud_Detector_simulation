@@ -10,7 +10,7 @@ python server.py --port 8766
 python server.py --sample 500 --window-seconds 60
 ```
 
-The server uses only the Python standard library (3.9+). On boot the UI loads the synthetic fixture into a playback queue; press **Play** or **Step**, or run any one-click scenario. All data stays in memory; the only disk output is an explicit CSV export. Stop with Ctrl+C.
+The server uses only the Python standard library (3.9+). On boot the UI loads the synthetic fixture into a playback queue; press **Play**, or run any one-click scenario. All data stays in memory; the only disk output is an explicit CSV export. Stop with Ctrl+C.
 
 Run the tests:
 
@@ -44,7 +44,7 @@ python tools/make_fixtures.py
 | `evaluation.py` | Temporal split, confusion, precision/recall/FPR, PR curve and average precision, recall at FPR, per-rule ablation |
 | `datasets.py` | One-entry catalogue and synthetic JSONL loader |
 | `server.py` | Loopback HTTP API plus static dashboard |
-| `static/` | Demo-first dashboard: Live, Bloom, DGIM, Apriori, Evidence tabs; presentation and dark modes |
+| `static/` | Demo-first dashboard: Live, Bloom, DGIM, Apriori, Evidence tabs; large-type layout and dark mode |
 | `scenarios.json` | Parameters for the in-memory one-click scenarios |
 | `tools/` | Fixture generation and optional baseline retraining |
 | `tests/` | `test_engine.py` + `test_data_model.py` |
