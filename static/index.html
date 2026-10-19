@@ -34,6 +34,7 @@
     <label class="speed-label" for="speed">Speed <input id="speed" type="range" min="0" max="1000" value="650" aria-label="Playback speed"></label>
   </div>
   <div class="top-group top-actions">
+    <button class="button secondary" id="sound" title="Toggle decision beeps">Sound on</button>
     <button class="button secondary" id="theme">Dark</button>
     <button class="button primary" id="guided">Guided demo</button>
   </div>
@@ -47,9 +48,9 @@
   </div>
   <div class="stats">
     <div class="stat"><span>Events</span><strong id="total">0</strong><small><b id="active">0</b> in the active window</small></div>
-    <div class="stat"><span>Allowed <i class="dot green"></i></span><strong id="allowed">0</strong><small>Low risk</small></div>
-    <div class="stat"><span>Review <i class="dot amber"></i></span><strong id="reviewed">0</strong><small>Verification suggested</small></div>
-    <div class="stat"><span>Blocked <i class="dot red"></i></span><strong id="blocked">0</strong><small>High risk</small></div>
+    <div class="stat" id="stat-allow"><span>Allowed <i class="dot green"></i></span><strong id="allowed">0</strong><small>Low risk</small></div>
+    <div class="stat" id="stat-review"><span>Review <i class="dot amber"></i></span><strong id="reviewed">0</strong><small>Verification suggested</small></div>
+    <div class="stat" id="stat-block"><span>Blocked <i class="dot red"></i></span><strong id="blocked">0</strong><small>High risk</small></div>
   </div>
   <div class="demo-bar">
     <div><span class="demo-label">SCENARIO</span>

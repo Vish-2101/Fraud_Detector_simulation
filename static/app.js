@@ -10,6 +10,10 @@ let aprioriItemsets = [];
 let aprioriSelected = null;
 let guidedIndex = 0;
 let guidedOpen = false;
+let lastTotal = 0;
+let lastBeep = 0;
+let audioCtx = null;
+let soundOn = localStorage.getItem('radar-sound') !== 'off';
 
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -59,16 +63,55 @@ function eventView(e) {
 }
 
 const COLORS = ['#6554d9','#3b7dd8','#229578','#bc8837','#de6378','#8e5cc7','#2f9bb3','#a2632f'];
+const DECISION_BOX = {allow: 'stat-allow', review: 'stat-review', block: 'stat-block'};
+
+function beep(action) {
+  if (!soundOn || performance.now() - lastBeep < 90) return;
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return;
+  lastBeep = performance.now();
+  try {
+    audioCtx = audioCtx || new AudioContextCtor();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const now = audioCtx.currentTime;
+    const block = action === 'block';
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = block ? 'sawtooth' : 'sine';
+    osc.frequency.setValueAtTime(block ? 300 : action === 'review' ? 580 : 880, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(block ? 0.07 : 0.05, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + (block ? 0.24 : 0.13));
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + (block ? 0.26 : 0.15));
+  } catch {}
+}
+
+function pulseDecision(action) {
+  const node = $(DECISION_BOX[action]);
+  if (!node) return;
+  node.classList.remove('flash-allow', 'flash-review', 'flash-block');
+  void node.offsetWidth;
+  node.classList.add(`flash-${action}`);
+  clearTimeout(node.flashTimer);
+  node.flashTimer = setTimeout(() => node.classList.remove(`flash-${action}`), 720);
+  beep(action);
+}
 
 /* ---------- rendering ---------- */
 function render(s) {
+  const previousTotal = lastTotal;
   state = s;
   if (!state) return;
+  lastTotal = Number(state.total) || 0;
   $('total').textContent = state.total;
   $('active').textContent = state.active;
   $('allowed').textContent = state.counts.allow || 0;
   $('reviewed').textContent = state.counts.review || 0;
   $('blocked').textContent = state.counts.block || 0;
+  if (lastTotal > previousTotal && state.events?.[0]) pulseDecision(state.events[0].action);
   $('clock').textContent = liveTime();
   $('window-length').textContent = `${state.window_seconds || state.dgim_config?.window || 60}s`;
   $('dataset-mode').textContent = state.dataset?.name || 'synthetic';
@@ -550,6 +593,7 @@ function applyPrefs() {
   const dark = localStorage.getItem('radar-theme') === 'dark';
   document.body.classList.toggle('dark', dark);
   $('theme').textContent = dark ? 'Light' : 'Dark';
+  $('sound').textContent = soundOn ? 'Sound on' : 'Sound off';
 }
 
 /* ---------- guided demo ---------- */
@@ -641,6 +685,12 @@ function wire() {
       render(s);
       $('run-status').textContent = 'Custom event evaluated · inspect the decision';
     } catch (error) { toast(error.message); }
+  };
+  $('sound').onclick = () => {
+    soundOn = !soundOn;
+    localStorage.setItem('radar-sound', soundOn ? 'on' : 'off');
+    $('sound').textContent = soundOn ? 'Sound on' : 'Sound off';
+    if (soundOn) beep('review');
   };
   $('theme').onclick = () => {
     const dark = !document.body.classList.contains('dark');

@@ -52,6 +52,7 @@ python tools/make_fixtures.py
 ## Live tab
 
 - **Dataset replay** streams the committed synthetic fixture in event-time order.
+- **Decision alerts**: the Allowed, Review, and Blocked cards flash green, amber, or red for each new event, with matching beeps that can be muted via **Sound on/off**.
 - **Scenarios**: `normal`, `card_testing`, `trial_abuse`, `multi_account_device`, `mixed`.
 - **Shadow view** switches the stream/inspector between three lenses:
   1. **Exact rules** — event-time window counters and domain rules only.
