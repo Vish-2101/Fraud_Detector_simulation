@@ -2,6 +2,7 @@
 let state = null;
 let selectedId = null;
 let queue = [];
+let loadedEvents = [];
 let playing = false;
 let paused = false;
 let generation = 0;
@@ -437,7 +438,8 @@ async function loadSynthetic() {
   stopPlayback();
   try {
     const response = await api('replay', {dataset: 'synthetic'});
-    queue = response.events || [];
+    loadedEvents = response.events || [];
+    queue = loadedEvents.slice();
     selectedId = null;
     render(await apiGet('state?light=1'));
     $('run-status').textContent = `Loaded ${queue.length} synthetic events (time-contiguous). Press Play or Step.`;
@@ -450,6 +452,7 @@ async function runScenario(name, instant = false) {
   try {
     if (instant) {
       const s = await api('scenario_run', {name});
+      loadedEvents = [];
       selectedId = s.events?.[0]?.id || null;
       render(s);
       $('run-status').textContent = `Instant scenario run · ${name}`;
@@ -457,7 +460,8 @@ async function runScenario(name, instant = false) {
     }
     await api('reset', {});
     const response = await api('scenario', {name});
-    queue = response.events || [];
+    loadedEvents = response.events || [];
+    queue = loadedEvents.slice();
     playing = true;
     paused = false;
     const token = ++generation;
@@ -476,7 +480,10 @@ async function resetSession() {
   try {
     const s = await api('reset', {});
     render(s);
-    $('run-status').textContent = 'Session reset · ready for a new demonstration';
+    queue = loadedEvents.slice();
+    $('run-status').textContent = queue.length
+      ? `Session reset · ${queue.length} events ready to replay`
+      : 'Session reset · ready for a new demonstration';
   } catch (error) { toast(error.message); }
   updateControls();
 }
