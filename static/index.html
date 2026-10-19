@@ -1,31 +1,284 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Radar Lab · Fraud & abuse simulation</title><link rel="stylesheet" href="/style.css"></head>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Radar Lab · Fraud & abuse simulation</title>
+<link rel="stylesheet" href="/style.css">
+</head>
 <body>
 <aside class="sidebar">
   <a class="brand" href="/"><span class="brand-icon">◉</span> radar<span>lab</span></a>
   <div class="workspace"><span class="avatar">IA</span><div>Advanced Data Analytics<small>IA2 · Working model</small></div></div>
-  <div class="nav-label">WORKSPACE</div>
-  <button class="nav active" data-view="monitor"><span>◈</span> Live monitor</button>
-  <button class="nav" data-view="algorithms"><span>⌘</span> Algorithm explorer</button>
-  <div class="side-note"><span class="status-dot"></span> Local simulation<p>Synthetic events. Explainable rules. No payment credentials required.</p><small>Inspired by your Stripe Radar study.<br>Independent academic prototype.</small></div>
+  <div class="nav-label">DEMO TABS</div>
+  <button class="nav active" data-tab="live"><span>◈</span> Live</button>
+  <button class="nav" data-tab="bloom"><span>◍</span> Bloom filter</button>
+  <button class="nav" data-tab="dgim"><span>▥</span> DGIM</button>
+  <button class="nav" data-tab="apriori"><span>⌘</span> Apriori</button>
+  <button class="nav" data-tab="evidence"><span>▤</span> Evidence</button>
+  <div class="side-note"><span class="status-dot"></span> Local simulation
+    <p>Synthetic + real-data replay + Stripe-format fixtures. Explainable rules, no payment credentials.</p>
+    <small>Independent educational prototype,<br>not Stripe software.</small></div>
 </aside>
+
 <main>
-  <header><div class="breadcrumb">Workspace <span>/</span> <b id="page-name">Live monitor</b></div><div class="local-badge"><span class="status-dot"></span> LOCAL ENVIRONMENT</div></header>
-  <section class="page" id="monitor">
-    <div class="heading"><div><div class="eyebrow">REAL-TIME FRAUD & ACCOUNT ABUSE</div><h1>See the signals. Stop the abuse.</h1><p>Watch a stream of activity become an explainable decision.</p></div><a href="/api/export" download="radar-lab-events.csv" class="button secondary">↓ Export events</a></div>
-    <div class="demo-bar"><div><span class="demo-label">SCENARIO</span><select id="scenario" aria-label="Simulation scenario"><option value="mixed">Mixed traffic · full demonstration</option><option value="normal">Everyday payments</option><option value="card_testing">Card-testing attack</option><option value="trial_abuse">Repeated free-trial abuse</option><option value="shared_ip">Shared campus Wi-Fi</option><option value="low_slow">Low-and-slow reuse (90s spacing)</option></select></div><div class="demo-actions"><select id="speed" aria-label="Playback speed"><option value="650">1× speed</option><option value="180">3× speed</option><option value="40">Instant</option></select><button class="button primary" id="run">▶ Run simulation</button><button class="button secondary" id="pause" disabled>Pause</button><button class="icon-button" id="reset" title="Reset session">↺ Reset</button></div></div>
-    <div class="run-info"><span id="run-status" role="status">Ready to simulate · choose a scenario and press Run</span><span>SIMULATED CLOCK <b id="clock">00:00</b><button id="advance" title="Expire the 60-second window">+61s</button></span></div>
-    <div class="stats"><div class="stat"><span>Events processed</span><strong id="total">0</strong><small><b id="active">0</b> in the last 60 simulated seconds</small></div><div class="stat"><span>Allowed <i class="dot green"></i></span><strong id="allowed">0</strong><small>Low-risk activity</small></div><div class="stat"><span>Sent for review <i class="dot amber"></i></span><strong id="reviewed">0</strong><small>Additional verification suggested</small></div><div class="stat"><span>Blocked <i class="dot red"></i></span><strong id="blocked">0</strong><small>High-risk activity identified</small></div></div>
-    <div class="demo-bar" style="margin-top:12px"><div><span class="demo-label">ABLATION</span><label style="font-size:11px"><input type="checkbox" id="shadow-toggle"> Shadow mode: show exact-rules-only baseline vs full score</label> <span class="hint" id="shadow-summary"></span></div></div><div class="monitor-grid"><div class="card traffic-card"><div class="card-title"><h2>Activity overview</h2><div class="legend"><span><i class="dot purple"></i> All events</span><span><i class="dot red"></i> Flagged</span></div></div><div id="chart" class="chart" aria-label="Event counts by 10-second time bucket"></div><div class="chart-caption">10-second buckets · historical decisions <span id="latency">Local scoring: —</span></div></div><div class="card policy-card"><div class="card-title"><h2>Decision policy</h2><span class="chip">Editable</span></div><label class="slider-label" for="review-range">Review from <b id="review-value">35</b></label><input id="review-range" type="range" min="1" max="99" value="35"><label class="slider-label" for="block-range">Block from <b id="block-value">65</b></label><input id="block-range" type="range" min="2" max="100" value="65"><div class="risk-scale"><span>ALLOW</span><span>REVIEW</span><span>BLOCK</span></div><p class="hint">Threshold changes apply to new events. Evaluation below replays all stored scores.</p></div></div>
-    <div class="stream-grid"><div class="card event-card"><div class="card-title"><h2>Event stream <span class="chip" id="event-count">0</span></h2><select id="filter" aria-label="Filter events"><option value="all">All decisions</option><option value="allow">Allowed</option><option value="review">Review</option><option value="block">Blocked</option></select></div><div class="table-scroll"><table><thead><tr><th>EVENT / ACCOUNT</th><th>TIME</th><th>RISK SCORE</th><th>DECISION</th></tr></thead><tbody id="events"></tbody></table><div class="empty" id="empty"><div>⌁</div><h3>Your event stream starts here</h3><p>Run a scenario or send a custom event below.</p></div></div><div class="table-footer">Select an event to inspect its evidence. Showing the latest 150.</div></div><div class="card inspector"><div class="card-title"><h2>Decision inspector</h2><span class="chip">Explainable</span></div><div id="inspection"><div class="empty"><div>◎</div><h3>Every score has a story</h3><p>Select an event to see its signals,<br>window counts and score breakdown.</p></div></div></div></div>
-    <div class="bottom-grid"><div class="card"><div class="card-title"><h2>Send a custom event</h2><span class="chip">Interactive</span></div><form id="custom"><div class="form-grid"><label>Event type<select name="type"><option>payment</option><option>signup</option><option>trial</option><option>usage</option><option>cancel</option></select></label><label>Account ID<input name="account" value="demo-user" required maxlength="80"></label><label>Device ID<input name="device" value="demo-laptop" required maxlength="80"></label><label>IP alias<input name="ip" value="demo-network" required maxlength="80"></label><label>Card token (fictional)<input name="card" value="demo-card" required maxlength="80"></label><label>Amount (USD)<input type="number" name="amount" min="0" max="1000000" value="49" step="0.01"></label><label>Trial credits used (%)<input name="usage" type="number" min="0" max="100" value="0"></label><label>Known synthetic truth<select name="label"><option value="unknown">Unknown · exclude from metrics</option><option value="legitimate">Legitimate</option><option value="abuse">Abuse</option></select></label></div><div class="checks"><label><input type="checkbox" name="disposable"> Temporary email</label><label><input type="checkbox" name="country_mismatch"> Country mismatch</label><label><input type="checkbox" name="failed"> Failed payment</label></div><button class="button primary" type="submit">+ Evaluate event</button><span class="hint"> Each event advances time by 1 second.</span></form></div><div class="card evaluation"><div class="card-title"><h2>Detection evaluation</h2><span class="chip">Synthetic truth</span></div><div class="metric-pair"><div><strong id="precision">—</strong><span>Precision</span></div><div><strong id="recall">—</strong><span>Recall</span></div></div><div class="confusion"><div>True positives<b id="tp">0</b></div><div>False positives<b id="fp">0</b></div><div>False negatives<b id="fn">0</b></div><div>True negatives<b id="tn">0</b></div></div><p class="hint">Review or block = flagged. <span id="labeled">0</span> labeled events. Unknown labels excluded. These are demonstration results, not real-world accuracy.</p></div></div>
-    <footer>RADAR LAB <span>Stream mining → recent features → risk rules → action → evaluation</span></footer>
-  </section>
-  <section class="page hidden" id="algorithms"><div class="heading"><div class="eyebrow">FROM THEORY TO A WORKING MODEL</div><h1>Open the black box.</h1><p>Inspect the actual algorithms behind this academic simulation.</p></div><div class="algorithm-banner">Implemented here: exact sliding windows, weighted rules, Apriori, DGIM and Bloom Filter. The score is a heuristic rule score, not a trained ML model or a probability.</div><div class="bottom-grid"><div class="card"><div class="card-title"><h2>01 · Exact sliding window</h2><span class="chip">Decision feature</span></div><p>Each arriving event updates per-device, IP and card counters. Events at or before <code>now - 60s</code> expire. The current event is included.</p><div class="pipeline"><span>Event</span>→<span>Expire old</span>→<span>Update counts</span>→<span>Score</span></div><p>Distinct-account counts use reference counts, so multiple events from one account are not counted as multiple accounts.</p><p class="hint">Expected O(1) keyed updates; expiry is amortized O(1) per event. History capped at 2,000 events. DGIM below estimates the same bursts without storing the full window.</p><button class="button secondary" id="expire">Advance 61s and expire recent state</button><p id="window-summary" class="hint"></p></div><div class="card"><div class="card-title"><h2>A · Apriori: signals that occur together</h2><span class="chip">Offline analysis</span></div><p>Level-wise candidates with subset pruning on event signal baskets (only indicators that fired). Max itemset size 3.</p><div><label class="slider-label" for="support-range">Min support <b id="support-value">12%</b></label><input id="support-range" type="range" min="1" max="50" value="12"></div><div id="patterns"></div><div id="rules"></div><h4 style="margin:10px 0 6px">Evaluation-only: label as item (offline, never scored)</h4><div id="eval-rules"></div><h4 style="margin:10px 0 6px">Time-split check (mine first half, test second)</h4><div id="time-split"></div><p class="hint" id="apriori-summary"></p><p class="hint">Support = share of analyzed events containing the itemset. Confidence P(B|A) and lift are shown per rule. Co-occurrence is not causation and high support does not prove fraud. Baskets are rule-derived, so patterns can be circular; Apriori never scores events.</p></div><div class="card"><div class="card-title"><h2>B · DGIM: suspicious bursts in last N events</h2><span class="chip">Streaming estimate</span></div><p>Binary stream per device/card: <code>1</code> when an event carries <code>failed</code>, <code>disposable-email</code> or <code>country-mismatch</code>; else <code>0</code>. Classical buckets (powers of two, max 2 per size). Window = last <b id="dgim-window">60</b> stream elements per entity (about 60s only under 1-event-per-second playback).</p><div><label>Inspect entity <select id="dgim-entity"></select></label> <label class="slider-label" for="dgim-range">Burst threshold <b id="dgim-value">5</b></label><input id="dgim-range" type="range" min="1" max="20" value="5"></div><div id="dgim-summary"></div><table><thead><tr><th>BUCKET POS</th><th>SIZE</th></tr></thead><tbody id="dgim-table"></tbody></table><div style="margin-top:10px"><button class="button secondary" id="dgim-demo">Run 1000-element scale demo</button> <span class="hint">bucket count vs exact storage, estimate error (epsilon trade-off)</span></div><div id="dgim-demo-out"></div><p class="hint">Estimate = sum(bucket sizes) minus half the oldest (boundary) bucket, so it may differ from the exact count. A qualifying estimate adds a modest +10 <code>dgim_device_burst</code> only with corroborating evidence; DGIM alone cannot block (max +20 below review).</p></div><div class="card"><div class="card-title"><h2>C · Bloom Filter: possibly seen before?</h2><span class="chip">Probabilistic membership</span></div><p>Separate filters for device and card identifiers (synthetic aliases only). Query <b>before</b> insert: first sighting reports <code>definitely_absent</code>; later sightings report <code>possibly_present</code> (may be a false positive, never proof of fraud).</p><div class="sketch-summary"><span id="bloom-summary">No identifiers yet</span></div><div id="bloom-grids"></div><div><label>Kind <select id="bloom-kind"><option value="device">device</option><option value="card">card</option></select></label><label>Identifier <input id="bloom-key" value="demo-laptop" maxlength="80"></label><button class="button secondary" id="bloom-check">Check (query only)</button> <span class="hint" id="bloom-result"></span></div><p class="hint">Deterministic BLAKE2b hashes (3) over 512 bits. Insert-only: expiring exact counters does not clear bits; Reset clears the session. A positive contributes at most +10 and only when corroborated (reuse/trial/disposable/failure).</p></div></section>
-<<<<<<< HEAD
-  <section class="page hidden" id="guide"><div class="heading"><div class="eyebrow">READY FOR YOUR CLASSROOM DEMO</div><h1>Tell the story in five minutes.</h1><p>Show the problem, expose the evidence, then discuss the trade-offs.</p></div><div class="card guide-card"><h2>Presentation walkthrough</h2><ol><li><b>Start with normal traffic.</b> Reset, choose Everyday payments and run. Ordinary events stay low risk.</li><li><b>Introduce card testing.</b> Repeated attempts on the same card raise velocity. Select a blocked event to explain the points.</li><li><b>Demonstrate free-trial cycling.</b> Reused devices, multiple accounts, trial starts and cancellations build evidence over time. Early abuse can escape detection.</li><li><b>Test shared campus Wi-Fi.</b> Distinct users share a network but not a device. IP reuse contributes only 10 points and alone stays allowed under the default thresholds.</li><li><b>Explain false positives and negatives.</b> Reset and run Mixed traffic. Legitimate travelers can be flagged; a stealth attack can be missed. Change the review threshold and watch precision and recall.</li><li><b>Connect to the syllabus.</b> Open Algorithm explorer. Compare exact window counts with DGIM estimates, test Bloom reuse, explain Apriori support/confidence/lift, run the 1000-element DGIM scale demo, and advance 61 seconds to show exact-window expiry (Bloom persists, DGIM is count-based). Then run Low-and-slow reuse with shadow mode on: the exact window forgets each 90s-spaced event while Bloom/DGIM flip later events to review.</li></ol><h2>What the model does</h2><p>A Python service consumes synthetic payment and account events, maintains a 60-second window, applies transparent weighted rules and returns allow, review or block. The browser animates the stream. Events and metrics are real computations, not pre-rendered results.</p><h2>What to say accurately</h2><p>“This is our educational simulation inspired by the business problem in Stripe Radar. It demonstrates stream mining and explainable heuristics. It does not reproduce Stripe’s proprietary machine-learning model, production thresholds or infrastructure.”</p><p>Review here is a generic analyst/verification recommendation. It does not simulate payment capture, issuer authorization, 3-D Secure, actual credit restriction or Stripe’s payment-review semantics. Labels describe authored scenarios, not independently observed fraud outcomes.</p><h2>Advantages & limitations</h2><p>Incremental counters are fast and easy to explain. Rule weights are manually chosen and can miss attacks or flag legitimate users. Device aliases can be rotated; real identity resolution is absent. Bloom filters and DGIM trade exactness for fixed/streaming-friendly state, while Apriori can become costly as the item vocabulary grows. A production system needs validated predictive models, real outcome feedback and distributed state.</p><h2>AI-use disclosure</h2><p>Codex assisted with implementation, interface design and tests. Students should review the rules, run the demonstrations, understand the limitations and describe this assistance in the assignment’s AI declaration.</p><h2>Scope of your report</h2><p>CURE, GSP, exponential histograms and DTW are discussed as possible academic alternatives in the supplied report; they are not implemented in this model. The cancellation-to-trial signal here is a simple window rule, not GSP.</p></div></section>
-=======
->>>>>>> 7a1d58272cfbf1e2a20d00aaeb7a73c6dc82f9bf
-  <div id="toast" role="alert" class="toast hidden"></div>
-</main><script src="/app.js"></script></body></html>
+<header class="topbar">
+  <div class="top-group dataset-group">
+    <label for="dataset">DATASET</label>
+    <select id="dataset" aria-label="Dataset"></select>
+    <button class="button secondary" id="load-dataset">Load</button>
+  </div>
+  <div class="top-group playback">
+    <button class="button primary" id="play" disabled>▶ Play</button>
+    <button class="button secondary" id="pause" disabled>Pause</button>
+    <button class="button secondary" id="step" disabled>Step</button>
+    <button class="button secondary" id="reset">↺ Reset</button>
+    <label class="speed-label" for="speed">Speed <input id="speed" type="range" min="0" max="1000" value="650" aria-label="Playback speed"></label>
+  </div>
+  <div class="top-group top-actions">
+    <button class="button secondary" id="present" title="Larger fonts, hides configuration controls">Presentation</button>
+    <button class="button secondary" id="theme">Dark</button>
+    <button class="button primary" id="guided">Guided demo</button>
+  </div>
+</header>
+
+<section class="tab-panel" id="tab-live">
+  <div class="heading">
+    <div><div class="eyebrow">REAL-TIME FRAUD & ACCOUNT ABUSE</div><h1>See the signals. Stop the abuse.</h1>
+      <p>Event-time windows, explainable rules, and three shadow views. Labels are evaluation-only.</p></div>
+    <a href="/api/export" download="radar-lab-events.csv" class="button secondary">↓ Export CSV</a>
+  </div>
+  <div class="stats">
+    <div class="stat"><span>Events</span><strong id="total">0</strong><small><b id="active">0</b> in the active window</small></div>
+    <div class="stat"><span>Allowed <i class="dot green"></i></span><strong id="allowed">0</strong><small>Low risk</small></div>
+    <div class="stat"><span>Review <i class="dot amber"></i></span><strong id="reviewed">0</strong><small>Verification suggested</small></div>
+    <div class="stat"><span>Blocked <i class="dot red"></i></span><strong id="blocked">0</strong><small>High risk</small></div>
+  </div>
+  <div class="demo-bar">
+    <div><span class="demo-label">SCENARIO</span>
+      <select id="scenario" aria-label="Simulation scenario">
+        <option value="mixed">Mixed traffic · full demonstration</option>
+        <option value="normal">Everyday payments</option>
+        <option value="card_testing">Card-testing attack</option>
+        <option value="trial_abuse">Repeated free-trial abuse</option>
+        <option value="multi_account_device">Multi-account on one device</option>
+        <option value="low_slow">Low-and-slow reuse (90s spacing)</option>
+        <option value="free_forwarding_email">Free-forwarding email domain</option>
+        <option value="shared_ip">Shared campus Wi-Fi</option>
+        <option value="shared_campus_wifi_fp_trap">Campus Wi-Fi false-positive trap</option>
+      </select>
+      <button class="button primary" id="run-scenario">▶ Run scenario</button>
+    </div>
+    <div class="demo-actions">
+      <label class="inline-label">Shadow view
+        <select id="shadow-view">
+          <option value="full">3 · Rules + Bloom/DGIM</option>
+          <option value="exact">1 · Exact rules only</option>
+          <option value="baseline">2 · Learned baseline</option>
+        </select>
+      </label>
+      <button class="icon-button" id="advance" title="Advance beyond the exact window">+ window</button>
+    </div>
+  </div>
+  <div class="run-info"><span id="run-status" role="status">Ready · choose a dataset or scenario</span>
+    <span>WINDOW <b id="window-length">60s</b> · EVENT TIME <b id="clock">00:00</b> · <span id="dataset-mode">synthetic</span></span></div>
+
+  <div class="monitor-grid">
+    <div class="card traffic-card">
+      <div class="card-title"><h2>Activity overview</h2><div class="legend"><span><i class="dot purple"></i> All events</span><span><i class="dot red"></i> Flagged</span></div></div>
+      <div id="chart" class="chart" aria-label="Event counts by time bucket"></div>
+      <div class="chart-caption">Time buckets · historical decisions <span id="latency">Local scoring: —</span></div>
+    </div>
+    <div class="card policy-card">
+      <div class="card-title"><h2>Current score</h2><span class="chip" id="score-chip">select an event</span></div>
+      <div class="score-hero"><strong id="current-score">—</strong><span id="current-action" class="badge allow">allow</span></div>
+      <div class="stacked" id="score-breakdown"></div>
+      <p class="hint" id="score-caption">Each rule contributes points to a capped 0–100 heuristic, not a probability. The learned baseline scores separately.</p>
+      <div class="thresholds">
+        <label for="review-range">Review from <b id="review-value">35</b></label>
+        <input id="review-range" type="range" min="1" max="99" value="35">
+        <label for="block-range">Block from <b id="block-value">65</b></label>
+        <input id="block-range" type="range" min="2" max="100" value="65">
+      </div>
+      <div class="risk-scale"><span>NORMAL</span><span>ELEVATED</span><span>HIGHEST</span></div>
+      <p class="hint" id="shadow-summary"></p>
+    </div>
+  </div>
+
+  <div class="stream-grid">
+    <div class="card event-card">
+      <div class="card-title"><h2>Event stream <span class="chip" id="event-count">0</span></h2>
+        <select id="filter" aria-label="Filter events"><option value="all">All decisions</option><option value="allow">Allowed</option><option value="review">Review</option><option value="block">Blocked</option></select>
+      </div>
+      <div class="table-scroll"><table><thead><tr><th>EVENT / ACCOUNT</th><th>TIME</th><th>RISK SCORE</th><th>DECISION</th></tr></thead><tbody id="events"></tbody></table>
+        <div class="empty" id="empty"><div>⌁</div><h3>Your event stream starts here</h3><p>Load a dataset or run a scenario.</p></div></div>
+      <div class="table-footer">Click a row for evidence. Click a device/card/account in the inspector for its timeline. Showing the latest 150.</div>
+    </div>
+    <div class="card inspector">
+      <div class="card-title"><h2>Decision inspector</h2><span class="chip">Explainable</span></div>
+      <div id="inspection"><div class="empty"><div>◎</div><h3>Every score has a story</h3><p>Select an event to see its signals,<br>window counts and score breakdown.</p></div></div>
+    </div>
+  </div>
+
+  <div class="card entity-card hidden" id="entity-panel">
+    <div class="card-title"><h2 id="entity-title">Entity timeline</h2><button class="icon-button" id="entity-close">×</button></div>
+    <div class="table-scroll"><table><thead><tr><th>TIME</th><th>TYPE</th><th>SCORE</th><th>DECISION</th><th>EVIDENCE</th></tr></thead><tbody id="entity-events"></tbody></table></div>
+  </div>
+
+  <div class="bottom-grid">
+    <div class="card config-only">
+      <div class="card-title"><h2>Send a custom event</h2><span class="chip">Interactive</span></div>
+      <form id="custom"><div class="form-grid">
+        <label>Event type<select name="type"><option>payment</option><option>signup</option><option>trial</option><option>usage</option><option>cancel</option></select></label>
+        <label>Account ID<input name="account" value="demo-user" required maxlength="80"></label>
+        <label>Device ID<input name="device" value="demo-laptop" required maxlength="80"></label>
+        <label>IP alias<input name="ip" value="demo-network" required maxlength="80"></label>
+        <label>Card token<input name="card" value="demo-card" required maxlength="80"></label>
+        <label>Amount (USD)<input type="number" name="amount" min="0" max="1000000" value="49" step="0.01"></label>
+        <label>Trial credits used (%)<input type="number" name="usage" min="0" max="100" value="0"></label>
+        <label>Evaluation truth<select name="label"><option value="unknown">Unknown · excluded</option><option value="legitimate">Legitimate</option><option value="abuse">Abuse</option></select></label>
+      </div><div class="checks"><label><input type="checkbox" name="disposable"> Temporary email</label><label><input type="checkbox" name="forwarding_email"> Free-forwarding email</label><label><input type="checkbox" name="country_mismatch"> Country mismatch</label><label><input type="checkbox" name="failed"> Failed payment</label></div>
+      <button class="button primary" type="submit">+ Evaluate event</button><span class="hint"> Advances 1 simulated second.</span></form>
+    </div>
+    <div class="card">
+      <div class="card-title"><h2>What this view means</h2><span class="chip">Honest evaluation</span></div>
+      <p><b>1 · Exact rules</b> use only the event-time window counters (card attempts, device accounts, trials, IP accounts, amount, proxies).</p>
+      <p><b>2 · Learned baseline</b> is a logistic regression over label-free features exported as plain JSON and scored in pure Python.</p>
+      <p><b>3 · Rules + Bloom/DGIM</b> adds small, corroborated probabilistic signals. These never block alone (max +20, below review 35).</p>
+      <p class="hint">The temporal split uses the first 70% of labeled events for tuning/training and the last 30% for testing. Open <b>Evidence</b> for PR-AUC, recall@FPR, ablations and CSV export.</p>
+    </div>
+  </div>
+</section>
+
+<section class="tab-panel hidden" id="tab-bloom">
+  <div class="heading"><div><div class="eyebrow">SYLLABUS ALGORITHM · BLOOM FILTER</div><h1>Possibly seen before?</h1>
+    <p class="one-liner"><b>In fraud detection:</b> a fixed-size, insert-only membership filter asks “was this device/card seen in a high-risk event?” without storing every identifier.</p></div>
+    <button class="button primary" id="bloom-run-demo">▶ Run demo</button></div>
+  <div class="demo-bar"><div class="why"><b>One-click demo:</b> size a small filter, run a card-testing burst, then query a new identifier and find a real false positive.</div></div>
+  <div class="split-grid">
+    <div class="card config-only">
+      <div class="card-title"><h2>Controls</h2><span class="chip">m · k · n</span></div>
+      <label class="slider-label" for="bloom-m">m bits <b id="bloom-m-value">512</b></label><input id="bloom-m" type="range" min="16" max="4096" step="8" value="512">
+      <label class="slider-label" for="bloom-k">k hash functions <b id="bloom-k-value">3</b></label><input id="bloom-k" type="range" min="1" max="10" value="3">
+      <label class="slider-label" for="bloom-n">n expected inserts <b id="bloom-n-value">100</b></label><input id="bloom-n" type="range" min="10" max="2000" step="10" value="100">
+      <p class="hint" id="bloom-sizing">Suggested for n=100 at 1% FPP: m=—, k=—.</p>
+      <button class="button secondary" id="bloom-apply">Apply sizing to session filters</button>
+      <div class="divider"></div>
+      <label>Query kind <select id="bloom-kind"><option value="device">device</option><option value="card">card</option></select></label>
+      <label>Identifier <input id="bloom-key" value="demo-laptop" maxlength="80"></label>
+      <button class="button primary" id="bloom-check">Check (query only)</button>
+      <p class="hint" id="bloom-query-result">No query yet.</p>
+      <button class="button secondary" id="bloom-find-fp">Find a false positive</button>
+      <div id="bloom-fp-result"></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><h2>Live filter state</h2><span class="chip" id="bloom-mode">static</span></div>
+      <p id="bloom-summary" class="hint">No identifiers yet.</p>
+      <div class="fpp-row"><div><span>theoretical FPP</span><strong id="bloom-theory">—</strong></div><div><span>measured FPP</span><strong id="bloom-measured">—</strong></div><div><span>occupancy</span><strong id="bloom-occupancy">—</strong></div></div>
+      <h4>Device bits <small>current query positions glow</small></h4><div id="bloom-device-grid" class="bit-grid"></div>
+      <h4>Card bits</h4><div id="bloom-card-grid" class="bit-grid"></div>
+      <p class="hint">Insert-only means expiry of exact counters does not delete bits. The optional rotating mode keeps the old generation for queries and starts a new one for inserts, so the filter can forget. A positive is never proof: the scoring rule requires corroboration and adds at most +10.</p>
+    </div>
+  </div>
+  <div class="card advantages"><div class="card-title"><h2>Advantages / Limitations</h2></div>
+    <div class="two-col"><div><h4>Advantages</h4><ul><li>O(m) bits regardless of how many identifiers are remembered; O(k) query/insert.</li><li>No false negatives for inserted keys; deterministic keyed BLAKE2b hashing.</li><li>Good fit for “has this bad identifier been seen?” with a privacy-friendly footprint.</li></ul></div>
+    <div><h4>Limitations</h4><ul><li>False positives; positive ≠ proof of fraud.</li><li>Insert-only cannot remove an identifier unless a rotating generation forgets it.</li><li>Decision feedback can reinforce past flags; bounded here by a corroboration requirement.</li><li>Missing/rotated device identifiers limit what can be remembered.</li></ul></div></div>
+  </div>
+</section>
+
+<section class="tab-panel hidden" id="tab-dgim">
+  <div class="heading"><div><div class="eyebrow">SYLLABUS ALGORITHM · DGIM</div><h1>Count suspicious 1s without storing the window.</h1>
+    <p class="one-liner"><b>In fraud detection:</b> each device/card stream carries a binary suspicious bit (failure, disposable/forwarding email, country proxy). DGIM estimates how many 1s are in the last N events using O(log²N) buckets.</p></div>
+    <button class="button primary" id="dgim-run">▶ Run demo</button></div>
+  <div class="demo-bar"><div class="why"><b>One-click demo:</b> run the 1000-element stream, then the worst-case pattern, and compare bucket storage with exact storage.</div>
+    <button class="button secondary" id="dgim-worst">Worst-case stream</button><button class="button secondary" id="dgim-scale">1000-element scale demo</button></div>
+  <div class="split-grid">
+    <div class="card">
+      <div class="card-title"><h2>Live buckets</h2><span class="chip" id="dgim-entity-chip">most recent device</span></div>
+      <div class="config-only"><label>Inspect entity <select id="dgim-entity"></select></label>
+        <label class="slider-label" for="dgim-window-range">Window N (elements) <b id="dgim-window-value">60</b></label><input id="dgim-window-range" type="range" min="10" max="1000" step="10" value="60">
+        <label class="slider-label" for="dgim-threshold-range">Burst threshold <b id="dgim-threshold-value">5</b></label><input id="dgim-threshold-range" type="range" min="1" max="30" value="5">
+      </div>
+      <p id="dgim-summary" class="hint">Run a scenario to populate DGIM streams.</p>
+      <div id="dgim-buckets" class="bucket-row"></div>
+      <p class="hint">Each box is a bucket; width grows with bucket size. At most two buckets of each power of two. Estimate = sum(sizes) − oldest(size)/2, so the relative error bound is ≤ ~50%.</p>
+    </div>
+    <div class="card">
+      <div class="card-title"><h2>Estimate vs exact</h2><span class="chip" id="dgim-storage-chip">—</span></div>
+      <div id="dgim-chart" class="svg-wrap"></div>
+      <div id="dgim-demo-summary" class="hint">Run the scale demo to plot the estimate against the exact count.</div>
+      <p class="hint">Memory-bounded replay: per-entity streams are capped with an LRU (512 streams by default), so replaying 50k+ events does not grow without bound.</p>
+    </div>
+  </div>
+  <div class="card advantages"><div class="card-title"><h2>Advantages / Limitations</h2></div>
+    <div class="two-col"><div><h4>Advantages</h4><ul><li>Sublinear storage: O(log²N) buckets for a window of N bits.</li><li>Streaming updates are amortized O(log N); no need to keep every event.</li><li>Works well for bursts where exact per-entity counters are too expensive.</li></ul></div>
+    <div><h4>Limitations</h4><ul><li>Approximate: the classical bound is ~50% relative error, not exact.</li><li>Count-based window, not event-time; it is only “60 seconds” when events arrive at 1/s.</li><li>The suspicious bit is a proxy definition; it can miss label-bearing context.</li><li>Contributes modest points and cannot block alone.</li></ul></div></div>
+  </div>
+</section>
+
+<section class="tab-panel hidden" id="tab-apriori">
+  <div class="heading"><div><div class="eyebrow">SYLLABUS ALGORITHM · APRIORI</div><h1>Which signals occur together?</h1>
+    <p class="one-liner"><b>In fraud detection:</b> level-wise frequent-itemset mining over per-event signal baskets surfaces combinations like card velocity + failure + mismatch. It is offline analysis and never scores an event.</p></div>
+    <button class="button primary" id="apriori-run">▶ Run demo</button></div>
+  <div class="demo-bar"><div class="why"><b>One-click demo:</b> run mixed traffic, lower support to the auto-suggested value for imbalanced data, then compare all baskets with the fraud-only subset.</div>
+    <button class="button secondary" id="apriori-suggest">Use suggested support</button></div>
+  <div class="split-grid">
+    <div class="card">
+      <div class="card-title"><h2>Mining controls</h2><span class="chip">offline</span></div>
+      <div class="config-only">
+        <label class="slider-label" for="apriori-support">Min support <b id="apriori-support-value">12%</b></label><input id="apriori-support" type="range" min="1" max="60" value="12">
+        <label class="slider-label" for="apriori-confidence">Min confidence <b id="apriori-confidence-value">0%</b></label><input id="apriori-confidence" type="range" min="0" max="100" value="0">
+        <label class="check"><input type="checkbox" id="apriori-label-mode"> Offline label-as-item mode (evaluation only)</label>
+      </div>
+      <div id="apriori-levels"></div>
+      <div class="divider"></div>
+      <h4>Itemsets <small>click to highlight baskets</small></h4><div id="apriori-itemsets"></div>
+      <h4>Association rules</h4><div id="apriori-rules"></div>
+      <h4>Baskets containing the selected itemset</h4><div id="apriori-baskets" class="hint">Select an itemset.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><h2>Imbalanced data view</h2><span class="chip">auto support</span></div>
+      <div id="apriori-class"></div>
+      <div class="divider"></div>
+      <h4>Time-split check</h4><div id="apriori-split"></div>
+      <div class="divider"></div>
+      <h4>Evaluation-only label rules</h4><div id="apriori-eval"></div>
+      <p class="warning">Circular-pattern warning: baskets are rule-derived, and labels only appear in the offline evaluation mode or as a subset selector. High support or lift is not causation; a stable time-split check is stronger evidence than a single-session pattern.</p>
+    </div>
+  </div>
+  <div class="card advantages"><div class="card-title"><h2>Advantages / Limitations</h2></div>
+    <div class="two-col"><div><h4>Advantages</h4><ul><li>Interpretable itemsets and rules with support, confidence and lift.</li><li>Subset pruning makes the level-wise candidate search tractable for small baskets.</li><li>Useful for hypothesis generation and for explaining co-occurring signals.</li></ul></div>
+    <div><h4>Limitations</h4><ul><li>Frequent co-occurrence is not causation and not a calibrated risk score.</li><li>Support hides rare fraud patterns in imbalanced data; the auto-suggest and fraud-only view help.</li><li>Baskets come from the same rules, so patterns can be circular.</li><li>Offline only; cost grows with item vocabulary and basket count.</li></ul></div></div>
+  </div>
+</section>
+
+<section class="tab-panel hidden" id="tab-evidence">
+  <div class="heading"><div><div class="eyebrow">TEMPORAL EVALUATION · HONEST RESULTS</div><h1>Evidence, not vibes.</h1>
+    <p>First 70% of labeled events by time for tuning/training; last 30% held out. Labels never enter scoring.</p></div>
+    <a href="/api/export" download="radar-lab-events.csv" class="button secondary">↓ Export CSV</a></div>
+  <div class="demo-bar"><div><span class="demo-label">VIEW</span><select id="evidence-view-select"><option value="full">3 · Rules + Bloom/DGIM</option><option value="exact">1 · Exact rules</option><option value="baseline">2 · Learned baseline</option></select></div><div class="hint" id="evidence-split"></div></div>
+  <div class="monitor-grid">
+    <div class="card"><div class="card-title"><h2>Confusion matrix</h2><span class="chip" id="evidence-threshold">review ≥ —</span></div><div id="confusion" class="confusion"></div><div id="evidence-metrics" class="metric-grid"></div></div>
+    <div class="card"><div class="card-title"><h2>Precision–recall curve</h2><span class="chip" id="evidence-prauc">PR-AUC —</span></div><div id="pr-chart" class="svg-wrap"></div><div class="fpp-row"><div><span>recall @ 1% FPR</span><strong id="recall-1">—</strong></div><div><span>recall @ 5% FPR</span><strong id="recall-5">—</strong></div><div><span>labeled test events</span><strong id="test-n">—</strong></div></div></div>
+  </div>
+  <div class="card"><div class="card-title"><h2>Per-rule ablation</h2><span class="chip">flip counts when removed</span></div><div id="ablation"></div><p class="hint">A flip means removing that rule changes review/block to another action on the temporal test split. Counts of 0 are honest: many rules overlap or never fire on a dataset.</p></div>
+  <div class="card"><div class="card-title"><h2>Stripe risk-level comparison</h2><span class="chip">display only</span></div><div id="stripe-table" class="table-scroll"></div><p class="hint">Stripe <code>risk_level</code>/<code>risk_score</code> are copied for comparison only; they never enter scoring, Bloom, DGIM or Apriori. Sandbox data is deterministic and not real fraud.</p></div>
+  <div class="card advantages"><div class="card-title"><h2>Read this honestly</h2></div><div class="two-col"><div><h4>What the numbers mean</h4><ul><li>Positive = review or block under the current review threshold.</li><li>PR-AUC is average precision over the held-out test split.</li><li>Recall@FPR is the best recall at or below that false-positive rate.</li></ul></div><div><h4>Limitations</h4><ul><li>Synthetic labels are authored; IEEE-CIS labels are real but the mapping is proxy-heavy.</li><li>Stripe test outcomes are not ground truth for fraud.</li><li>Temporal splits reduce leakage but one split is not a production estimate.</li></ul></div></div></div>
+</section>
+
+<footer>RADAR LAB <span>event-time stream → features → rules → action → temporal evaluation</span></footer>
+</main>
+
+<div id="guided-overlay" class="guided hidden" role="dialog" aria-modal="true" aria-label="Guided demo">
+  <div class="guided-card">
+    <div class="guided-top"><span class="chip" id="guided-step">1 / 8</span><button class="icon-button" id="guided-close">×</button></div>
+    <div class="guided-caption" id="guided-caption"></div>
+    <div class="guided-progress"><i id="guided-progress"></i></div>
+    <div class="guided-actions"><button class="button secondary" id="guided-prev">← Back</button><button class="button primary" id="guided-next">Next →</button></div>
+    <p class="hint">Space = next step · R = reset guided demo · Esc = close</p>
+  </div>
+</div>
+<div id="toast" role="alert" class="toast hidden"></div>
+<script src="/app.js"></script>
+</body>
+</html>

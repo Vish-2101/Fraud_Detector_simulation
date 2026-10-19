@@ -1,0 +1,65 @@
+{
+  "normal": {
+    "description": "Everyday payments: fresh device/card per event.",
+    "disposable_email_rate": 0.0,
+    "accounts_per_device": 1,
+    "inter_signup_gap": 1,
+    "cancel_then_retrial_rate": 0.0
+  },
+  "card_testing": {
+    "description": "Repeated small failed payments on one card.",
+    "disposable_email_rate": 0.0,
+    "accounts_per_device": 8,
+    "inter_signup_gap": 1,
+    "cancel_then_retrial_rate": 0.0
+  },
+  "trial_abuse": {
+    "description": "Reused device cycles signup/trial/usage/cancel.",
+    "disposable_email_rate": 1.0,
+    "accounts_per_device": 4,
+    "inter_signup_gap": 1,
+    "cancel_then_retrial_rate": 1.0
+  },
+  "shared_ip": {
+    "description": "Distinct accounts share a campus IP.",
+    "disposable_email_rate": 0.0,
+    "accounts_per_device": 1,
+    "inter_signup_gap": 1,
+    "cancel_then_retrial_rate": 0.0
+  },
+  "low_slow": {
+    "description": "One device, a new disposable-email account every ~90 seconds.",
+    "disposable_email_rate": 1.0,
+    "accounts_per_device": 1,
+    "inter_signup_gap": 90,
+    "cancel_then_retrial_rate": 0.0
+  },
+  "multi_account_device": {
+    "description": "Documented signal: multiple accounts on one device.",
+    "disposable_email_rate": 0.5,
+    "accounts_per_device": 6,
+    "inter_signup_gap": 8,
+    "cancel_then_retrial_rate": 0.0
+  },
+  "low_slow_reuse": {
+    "description": "Documented signal: low-and-slow identifier reuse below exact-window velocity.",
+    "disposable_email_rate": 1.0,
+    "accounts_per_device": 7,
+    "inter_signup_gap": 90,
+    "cancel_then_retrial_rate": 0.0
+  },
+  "free_forwarding_email": {
+    "description": "Documented signal: free email forwarding/aliasing domain (proxy).",
+    "disposable_email_rate": 0.0,
+    "accounts_per_device": 5,
+    "inter_signup_gap": 20,
+    "cancel_then_retrial_rate": 0.0
+  },
+  "shared_campus_wifi_fp_trap": {
+    "description": "False-positive trap: many legitimate accounts on one network, distinct devices.",
+    "disposable_email_rate": 0.1,
+    "accounts_per_device": 10,
+    "inter_signup_gap": 1,
+    "cancel_then_retrial_rate": 0.0
+  }
+}

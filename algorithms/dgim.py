@@ -114,14 +114,18 @@ class DGIM:
         }
 
 
-def long_stream_demo(n=1000, window=100, density=0.3, seed=42):
-    """Deterministic long-stream demo (§7.2): run n bits through DGIM and
-    sample estimate vs exact count plus bucket count over time.
+def long_stream_demo(n=1000, window=100, density=0.3, seed=42, pattern='random'):
+    """Deterministic long-stream demo: run n bits through DGIM and sample
+    estimate vs exact count plus bucket count over time.
+
+    `pattern`:
+      - random: Bernoulli(density)
+      - ones:   all 1s (maximum bucket merging)
+      - worst:  alternating dense blocks, a deterministic stress pattern
 
     Shows the memory/accuracy trade-off: bucket count stays O(log n) while a
     naive exact window stores all `window` bits, and relative error stays
-    within the classical ~50% bound. Returns {'samples': [...], 'summary'}.
-    Samples every max(1, n//50) steps to keep the payload small.
+    within the classical ~50% bound. Samples every max(1, n//50) steps.
     """
     import random as _random
     rng = _random.Random(seed)
@@ -132,7 +136,12 @@ def long_stream_demo(n=1000, window=100, density=0.3, seed=42):
     max_rel_err, err_sum, err_n = 0.0, 0.0, 0
     max_buckets = 0
     for i in range(1, n + 1):
-        bit = 1 if rng.random() < density else 0
+        if pattern == 'ones':
+            bit = 1
+        elif pattern == 'worst':
+            bit = 1 if (i // 7) % 2 == 0 else (1 if i % 3 == 0 else 0)
+        else:
+            bit = 1 if rng.random() < density else 0
         d.update(bit)
         exact_window.append(bit)
         max_buckets = max(max_buckets, len(d.buckets))
@@ -147,8 +156,11 @@ def long_stream_demo(n=1000, window=100, density=0.3, seed=42):
                             'rel_error': round(rel, 4), 'buckets': len(d.buckets)})
     return {'samples': samples,
             'summary': {'n': n, 'window': window, 'density': density,
+                        'pattern': pattern,
                         'max_rel_error': round(max_rel_err, 4),
                         'avg_rel_error': round(err_sum / max(1, err_n), 4),
                         'max_buckets': max_buckets,
                         'exact_storage': window,
+                        'bucket_storage': max_buckets,
+                        'error_bound': 'relative error <= ~50% (classical DGIM)',
                         'note': 'Buckets stay O(log n); exact window stores `window` bits.'}}
