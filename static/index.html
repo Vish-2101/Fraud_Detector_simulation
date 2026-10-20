@@ -34,7 +34,6 @@
     <label class="speed-label" for="speed">Speed <input id="speed" type="range" min="0" max="1000" value="650" aria-label="Playback speed"></label>
   </div>
   <div class="top-group top-actions">
-    <button class="button secondary" id="sound" title="Toggle decision beeps">Sound on</button>
     <button class="button secondary" id="theme">Dark</button>
     <button class="button primary" id="guided">Guided demo</button>
   </div>
@@ -42,8 +41,7 @@
 
 <section class="tab-panel" id="tab-live">
   <div class="heading">
-    <div><div class="eyebrow">REAL-TIME FRAUD & ACCOUNT ABUSE</div><h1>See the signals. Stop the abuse.</h1>
-      <p>Event-time windows, explainable rules, and two shadow views. Labels are evaluation-only.</p></div>
+    <div><div class="eyebrow">REAL-TIME FRAUD & ACCOUNT ABUSE</div><h1>See the signals. Stop the abuse.</h1></div>
     <a href="/api/export" download="radar-lab-events.csv" class="button secondary">↓ Export CSV</a>
   </div>
   <div class="stats">
@@ -62,14 +60,6 @@
         <option value="multi_account_device">Multi-account on one device</option>
       </select>
       <button class="button primary" id="run-scenario">▶ Run scenario</button>
-    </div>
-    <div class="demo-actions">
-      <label class="inline-label">Shadow view
-        <select id="shadow-view">
-          <option value="full">3 · Bloom/DGIM</option>
-          <option value="baseline">2 · Learned baseline</option>
-        </select>
-      </label>
     </div>
   </div>
   <div class="run-info"><span id="run-status" role="status">Ready · synthetic demo</span>
@@ -362,13 +352,6 @@
     <div id="apriori-eval" class="apriori-eval-list"></div>
   </details>
 
-  <div class="card advantages apriori-advantages">
-    <div class="card-title"><h2>Advantages / Limitations</h2><span class="chip">offline only</span></div>
-    <div class="two-col">
-      <div><h4>Advantages</h4><ul><li>Patterns are readable: they name signals that show up together.</li><li>Pruning keeps the search tractable for small event baskets.</li><li>Useful for hypotheses and for explaining which signals cluster.</li></ul></div>
-      <div><h4>Limitations</h4><ul><li>Co-occurrence is not causation and is not a risk score.</li><li>Support can hide rare abuse in imbalanced data.</li><li>Baskets are rule-derived, so patterns can be circular; this is offline only.</li></ul></div>
-    </div>
-  </div>
 </section>
 
 <section class="tab-panel hidden" id="tab-evidence">

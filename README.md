@@ -62,11 +62,9 @@ The generator uses a fixed seed and emits the same bytes on every run. `tests/te
 ## Live tab
 
 - **Dataset replay** streams the committed synthetic fixture in event-time order.
-- **Decision alerts**: the Allowed, Review, and Blocked cards flash green, amber, or red for each new event, with matching beeps that can be muted via **Sound on/off**.
+- **Decision alerts**: the Allowed, Review, and Blocked cards flash green, amber, or red for each new event.
 - **Scenarios**: `normal`, `card_testing`, `trial_abuse`, `multi_account_device`, `mixed`.
-- **Shadow view** switches the stream/inspector between two lenses:
-  2. **Learned baseline** — logistic regression over label-free features, exported as plain JSON.
-  3. **Bloom/DGIM** — rules plus small, corroborated probabilistic signals.
+- **Decision stream/inspector** uses the live Bloom/DGIM lens: rules plus small, corroborated probabilistic signals.
 - **Decision inspector** shows every reason with points, window counts, Bloom result, DGIM estimate vs exact, and the exact-rules delta.
 - **Entity timeline** opens from any device/card/account in the inspector.
 - **Custom event** form evaluates one event and advances one simulated second.

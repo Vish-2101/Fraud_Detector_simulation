@@ -19,7 +19,6 @@ let aprioriPresetReady = false;
 let guidedIndex = 0;
 let guidedOpen = false;
 let lastTotal = 0;
-let lastBeep = 0;
 let dgimFilter = 'all';
 let dgimSearch = '';
 let dgimLoading = false;
@@ -30,8 +29,6 @@ let evidenceQueued = false;
 let evidenceReport = null;
 let evidenceGeneration = 0;
 let evidenceError = '';
-let audioCtx = null;
-let soundOn = localStorage.getItem('radar-sound') !== 'off';
 
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -70,39 +67,11 @@ const eventTime = e => fmtTime((e.time || 0) - (state?.dataset_start || 0));
 const liveTime = () => fmtTime((state?.clock || 0) - (state?.dataset_start || 0));
 
 function eventView(e) {
-  const mode = $('shadow-view')?.value || 'full';
-  if (mode === 'baseline' && e.baseline) {
-    return {score: e.baseline.score, action: e.baseline.action, mode: 'baseline'};
-  }
   return {score: e.score, action: e.action, mode: 'full'};
 }
 
 const COLORS = ['#6554d9','#3b7dd8','#229578','#bc8837','#de6378','#8e5cc7','#2f9bb3','#a2632f'];
 const DECISION_BOX = {allow: 'stat-allow', review: 'stat-review', block: 'stat-block'};
-
-function beep(action) {
-  if (!soundOn || performance.now() - lastBeep < 90) return;
-  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextCtor) return;
-  lastBeep = performance.now();
-  try {
-    audioCtx = audioCtx || new AudioContextCtor();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    const now = audioCtx.currentTime;
-    const block = action === 'block';
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = block ? 'sawtooth' : 'sine';
-    osc.frequency.setValueAtTime(block ? 300 : action === 'review' ? 580 : 880, now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(block ? 0.07 : 0.05, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + (block ? 0.24 : 0.13));
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start(now);
-    osc.stop(now + (block ? 0.26 : 0.15));
-  } catch {}
-}
 
 function pulseDecision(action) {
   const node = $(DECISION_BOX[action]);
@@ -112,7 +81,6 @@ function pulseDecision(action) {
   node.classList.add(`flash-${action}`);
   clearTimeout(node.flashTimer);
   node.flashTimer = setTimeout(() => node.classList.remove(`flash-${action}`), 720);
-  beep(action);
 }
 
 /* ---------- rendering ---------- */
@@ -1272,7 +1240,6 @@ function applyPrefs() {
   const dark = localStorage.getItem('radar-theme') === 'dark';
   document.body.classList.toggle('dark', dark);
   $('theme').textContent = dark ? 'Light' : 'Dark';
-  $('sound').textContent = soundOn ? 'Sound on' : 'Sound off';
 }
 
 /* ---------- guided demo ---------- */
@@ -1328,7 +1295,6 @@ function wire() {
   $('reset').onclick = resetSession;
   $('run-scenario').onclick = () => runScenario($('scenario').value, false);
   $('filter').onchange = renderEvents;
-  $('shadow-view').onchange = () => { renderEvents(); renderInspection(); };
   $('events').addEventListener('click', ev => {
     const row = ev.target.closest('[data-id]');
     if (row) { selectedId = row.dataset.id; renderEvents(); renderInspection(); }
@@ -1360,12 +1326,6 @@ function wire() {
       render(s);
       $('run-status').textContent = 'Custom event evaluated · inspect the decision';
     } catch (error) { toast(error.message); }
-  };
-  $('sound').onclick = () => {
-    soundOn = !soundOn;
-    localStorage.setItem('radar-sound', soundOn ? 'on' : 'off');
-    $('sound').textContent = soundOn ? 'Sound on' : 'Sound off';
-    if (soundOn) beep('review');
   };
   $('theme').onclick = () => {
     const dark = !document.body.classList.contains('dark');
