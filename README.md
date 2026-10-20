@@ -103,6 +103,22 @@ The learned baseline is a logistic-regression model over 13 **label-free** featu
 
 It is deliberately a **shadow comparator**, not the production decision maker. Every event keeps its rules-based action, while the baseline records its own 0–100 score and action alongside it using the same review/block thresholds. Comparing the two answers the questions the report needs: does a learned model add ranking value over transparent rules, and how much do the Bloom/DGIM signals change decisions? The exact-rules, learned-baseline and full views are all evaluated on the same temporal holdout with PR-AUC, recall at 1%/5% FPR, precision/recall/FPR and per-rule ablation. Labels are used only to fit the baseline and to score the held-out evaluation; they never enter features, scoring, Bloom, DGIM or Apriori baskets.
 
+### How the score is determined
+
+1. Start from 0 and add every row triggered in the rule table above. Counts use the current event-time window and include the current event. The exact-rules component is capped at 100.
+2. Add corroborated auxiliary points: Bloom can add at most +10 and DGIM at most +10 for the same event. They never flag an event on their own.
+3. The displayed score is `min(100, exact-rules points + Bloom points + DGIM points)`.
+4. The action is `allow` below the review threshold, `review` at or above it, and `block` at or above the block threshold. Defaults are review **35** and block **65**; both are adjustable. `cancel` events update context but score 0.
+5. The learned baseline uses its own model score with the same review/block thresholds; it does not change the live action.
+
+### Flagging conditions by algorithm
+
+- **Exact rules:** an event is flagged when its summed rule score reaches the review threshold; it is blocked when the score reaches the block threshold. The conditions and points are the table above.
+- **Bloom filter:** query-before-insert returns `possibly_present` or `absent`. A positive becomes +10 only when corroborated: lifecycle events need a seen device plus at least two device accounts, a trial, or a temporary email; payments need a seen card plus at least two card attempts or a failure. Otherwise it contributes nothing and never flags alone. High-risk events (suspicious bit or a non-allow action) are inserted after the query.
+- **DGIM:** each device/card stream stores the `suspicious_bit` (failed, temporary email, country mismatch, or free-forwarding email). A burst exists when the estimate is at least the threshold (default 5). It adds +10 only for a non-cancel suspicious event with a corroborating suspicious attribute; it never flags alone.
+- **Apriori:** it does not flag individual events or change their score. Offline, it flags frequent itemsets whose support is at least the selected minimum (auto-suggested or slider) and association rules whose confidence is at least the minimum. Bloom/DGIM markers are excluded from baskets; the optional label-as-item mode is evaluation-only.
+- **Learned baseline:** `p = sigmoid(intercept + Σ weight_i × (feature_i − mean_i) / scale_i)`, with a 0–100 score of `100 × p`. It flags as review at 35 and block at 65, but remains a shadow comparison only.
+
 ## Algorithm tabs
 
 ### Bloom filter
