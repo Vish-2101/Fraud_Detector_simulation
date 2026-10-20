@@ -98,6 +98,12 @@ Defaults: review **35**, block **65**. The current event is included in window f
 
 `cancel` events update context and score 0. Every scored event records a **shadow baseline** (exact rules only) and, when a model is present, a **learned baseline**.
 
+### What the learned baseline is and why it is compared
+
+The learned baseline is a logistic-regression model over 13 **label-free** features: amount, amount ≥ $1,000, temporary email, country mismatch, failed payment, device/account and card velocities, device trial count, IP-account count, the DGIM device estimate, the Bloom device/card lookups, and the current rule score. It is trained on the first 70% of labeled events by event time and evaluated on the held-out last 30%; it is exported to `models/baseline.json` and scored in pure Python at runtime.
+
+It is deliberately a **shadow comparator**, not the production decision maker. Every event keeps its rules-based action, while the baseline records its own 0–100 score and action alongside it using the same review/block thresholds. Comparing the two answers the questions the report needs: does a learned model add ranking value over transparent rules, and how much do the Bloom/DGIM signals change decisions? The exact-rules, learned-baseline and full views are all evaluated on the same temporal holdout with PR-AUC, recall at 1%/5% FPR, precision/recall/FPR and per-rule ablation. Labels are used only to fit the baseline and to score the held-out evaluation; they never enter features, scoring, Bloom, DGIM or Apriori baskets.
+
 ## Algorithm tabs
 
 ### Bloom filter
