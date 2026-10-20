@@ -283,23 +283,17 @@ function renderQueryBits(id, inspection, filter) {
 
 function renderBloomInspection(x) {
   const el = $('bloom-query-result');
-  el.className = `bloom-result ${x.outcome}`;
-  let body;
-  if (x.outcome === 'definitely_absent') {
-    body = '<b>Not seen.</b> Bloom filters have no false negatives, so this identifier was never inserted.';
-  } else if (x.outcome === 'true_positive') {
-    const event = x.inserted_event || {};
-    body = `<b>True positive.</b> Inserted by event <code>${esc(event.event_id || '—')}</code>. Action <span class="badge ${esc(event.action || 'allow')}">${esc(event.action || '—')}</span> · score <b>${num(event.score, 0)}</b>.`;
-  } else if (x.outcome === 'false_positive') {
-    const sources = (x.bit_sources || []).map(b => {
-      const ids = b.identifiers?.length ? b.identifiers.map(esc).join(', ') : 'no recorded source';
-      return `<li>bit ${b.position}: ${ids}</li>`;
-    }).join('');
-    body = `<b>False positive (hash collision).</b><ul>${sources}</ul>`;
-  } else {
-    body = '<b>Unknown result.</b>';
+  const view = window.BloomView;
+  if (!view) {
+    el.className = 'bloom-result unexpected';
+    el.textContent = 'Unexpected response from server.';
+    console.error('Bloom view helper is unavailable.', x);
+    return;
   }
-  el.innerHTML = `<p>${body}</p><p class="hint">${esc(x.kind)} · ${esc(x.key)} · k positions [${(x.positions || []).join(', ')}] · query only, no insert.</p>`;
+  const known = view.isKnownOutcome(x.outcome);
+  el.className = `bloom-result ${known ? x.outcome : 'unexpected'}`;
+  el.innerHTML = view.inspectionHtml(x);
+  if (!known) console.error('Unexpected Bloom inspection outcome.', x.outcome, x);
 }
 
 const dgimView = () => window.DgimView;
@@ -1083,7 +1077,7 @@ async function bloomRunDemo() {
     const s = await api('scenario_run', {name: 'card_testing'});
     render(s);
     switchTab('bloom');
-    toast('Bloom demo: card-testing burst inserted high-risk devices/cards. Query an identifier or find a false positive.');
+    toast('Bloom demo: card-testing burst inserted high-risk devices/cards. Query an inserted identifier.');
   } catch (error) { toast(error.message); }
 }
 
@@ -1141,20 +1135,6 @@ async function updateDgimConfig(payload, note) {
     renderDgim();
     toast(error.message);
   }
-}
-
-async function findFalsePositive() {
-  try {
-    const size = Number(state?.bloom?.device?.size || 512);
-    const k = Number(state?.bloom?.device?.num_hashes || 3);
-    const data = await api('bloom/find_false_positive', {size, num_hashes: k});
-    if (!data.found) {
-      $('bloom-fp-result').innerHTML = `<p class="hint">No false positive found after ${data.insertions} inserts on an isolated m=${size}, k=${k} filter.</p>`;
-      return;
-    }
-    const colliding = data.collisions.map(c => `<div class="pattern">${esc(c.key)}<b>positions [${c.positions.join(', ')}]</b></div>`).join('');
-    $('bloom-fp-result').innerHTML = `<div class="pattern"><b style="margin:0">False positive found after ${data.insertions} inserts on an isolated filter</b>Unseen key <code>${esc(data.probe)}</code> maps to bits [${data.probe_positions.join(', ')}], all already set. Session filters are untouched.<br>Filter occupancy ${pct(data.bits_set / size)} · theoretical FPP ${pct(data.theoretical_fpp)}.</div>${colliding}`;
-  } catch (error) { toast(error.message); }
 }
 
 /* ---------- navigation and preferences ---------- */
@@ -1279,11 +1259,25 @@ function wire() {
   $('guided-prev').onclick = () => guidedGo(guidedIndex - 1);
 
   // Bloom
-  $('bloom-check').onclick = async () => {
-    try { render(await api('inspect', {kind: $('bloom-kind').value, key: $('bloom-key').value})); }
+  const bloomCheck = async () => {
+    const input = $('bloom-key');
+    const key = input.value.trim();
+    input.value = key;
+    if (!key) { toast('Enter an identifier first.'); return; }
+    try { render(await api('inspect', {kind: $('bloom-kind').value, key})); }
     catch (error) { toast(error.message); }
   };
-  $('bloom-find-fp').onclick = findFalsePositive;
+  $('bloom-check').onclick = bloomCheck;
+  $('bloom-key').onkeydown = event => {
+    if (event.key === 'Enter') { event.preventDefault(); bloomCheck(); }
+  };
+  $('bloom-query-result').addEventListener('click', event => {
+    const target = event.target.closest('[data-bloom-check]');
+    if (!target) return;
+    $('bloom-kind').value = target.dataset.bloomKind;
+    $('bloom-key').value = target.dataset.bloomKey;
+    bloomCheck();
+  });
   $('bloom-run-demo').onclick = bloomRunDemo;
 
   // DGIM

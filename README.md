@@ -130,7 +130,7 @@ It is deliberately a **shadow comparator**, not the production decision maker. E
 - Every check returns exactly one result: `definitely_absent`, `true_positive`, or `false_positive (hash collision)`.
 - Device/card bit grids highlight the current k positions and label each one lit or dark. Checks never set bits, insert, or change scoring.
 - A demo-only exact side-set maps identifiers to their first inserting event and each bit to its source identifiers. It never reads labels and is never used for scoring; a real Bloom filter cannot distinguish true from false positives.
-- **Find a false positive** runs on an isolated filter copy, so session bits are untouched.
+- Wrong-kind or account-ID queries add a hint and one-click checks for the event's device and card.
 - Query-before-insert, high-risk-only insertion, and the corroborated +10 contribution are unchanged.
 
 ### DGIM

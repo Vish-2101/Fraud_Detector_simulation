@@ -138,6 +138,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(out.getvalue().encode(), content_type='text/csv; charset=utf-8')
         allowed = {'/': 'index.html', '/app.js': 'app.js',
                    '/apriori_view.js': 'apriori_view.js',
+                   '/bloom_view.js': 'bloom_view.js',
                    '/dgim_view.js': 'dgim_view.js', '/style.css': 'style.css'}
         if route not in allowed:
             return self.reply({'error': 'Not found'}, 404)
@@ -223,12 +224,8 @@ class Handler(BaseHTTPRequestHandler):
                     kind, key = body.get('kind', 'device'), body.get('key', '')
                     if kind not in ('device', 'card') or not isinstance(key, str) or not key.strip():
                         raise ValueError('Provide kind=device|card and a non-empty key.')
-                    bf = detector.bloom_device if kind == 'device' else detector.bloom_card
-                    result = bf.classify(key, count_query=False)
                     state = detector.state()
-                    state['inspection'] = {'kind': kind, **result,
-                                           'size': bf.size,
-                                           'num_hashes': bf.num_hashes}
+                    state['inspection'] = detector.bloom_inspection(kind, key)
                     return self.reply(state)
                 elif self.path == '/api/apriori':
                     support = body.get('min_support')

@@ -165,10 +165,17 @@ td small{display:block;color:var(--muted);font-size:10px}
 .bloom-bit.lit{background:var(--purple-soft);color:var(--purple)}
 .bloom-bit.dark{color:var(--red)}
 .bloom-result{background:var(--bg);border-radius:8px;padding:10px 12px;margin:8px 0;font-size:12px;line-height:1.6}
-.bloom-result.absent{border-left:3px solid var(--green)}
+.bloom-result.definitely_absent{border-left:3px solid var(--green)}
 .bloom-result.true_positive{border-left:3px solid var(--amber)}
 .bloom-result.false_positive{border-left:3px solid var(--red)}
+.bloom-result.unexpected{border-left:3px solid var(--purple)}
 .bloom-result ul{margin:6px 0 0 18px}
+.bloom-hint{margin-top:8px;padding:8px 10px;background:var(--card);border:1px solid var(--line);border-radius:7px}
+.bloom-hint p{margin:0 0 6px}
+.bloom-hint-actions{display:flex;gap:6px;flex-wrap:wrap}
+.bloom-link{border:1px solid var(--purple);background:var(--purple-soft);color:var(--purple);border-radius:6px;padding:4px 8px;font-size:10px;font-weight:750;cursor:pointer}
+.bloom-raw{margin-top:6px}
+.bloom-raw pre{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .bucket-row{display:flex;align-items:flex-end;gap:5px;flex-wrap:wrap;min-height:70px;padding:8px;background:var(--bg);border-radius:8px}
 .bucket{display:flex;align-items:center;justify-content:center;color:#fff;border-radius:5px;font-size:9px;font-weight:700;padding:4px;min-width:18px}
 .pattern{background:var(--bg);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:11px}

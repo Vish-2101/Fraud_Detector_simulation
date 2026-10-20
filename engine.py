@@ -76,6 +76,7 @@ class Detector:
     WINDOW = 60  # backwards-compatible default (instance: window_seconds)
     DGIM_WINDOW = 60
     DGIM_THRESHOLD = 5
+    BLOOM_OUTCOMES = ('definitely_absent', 'true_positive', 'false_positive')
     LIMIT = 60000  # session-bounded; the synthetic demo stays far below this
     TYPES = {'payment', 'signup', 'trial', 'usage', 'cancel'}
     APRIORI_MAX_EVENTS = 5000
@@ -660,6 +661,54 @@ class Detector:
             'device': self.bloom_device.to_state(),
             'card': self.bloom_card.to_state(),
         }
+
+    def bloom_inspection(self, kind, key):
+        """Query-only Bloom inspection with an explicit, stable outcome."""
+        if kind not in ('device', 'card'):
+            raise ValueError('Provide kind=device|card.')
+        key = str(key).strip()
+        if not key:
+            raise ValueError('Provide a non-empty key.')
+        bf = self.bloom_device if kind == 'device' else self.bloom_card
+        result = bf.classify(key, count_query=False)
+        if result.get('outcome') not in self.BLOOM_OUTCOMES:
+            raise ValueError('Bloom check produced an invalid outcome.')
+        result.update(kind=kind, size=bf.size, num_hashes=bf.num_hashes,
+                      hint=self._bloom_hint(kind, result['key']))
+        return result
+
+    def _bloom_hint(self, kind, key):
+        """Explain a wrong-kind or account-ID query without mutating a filter."""
+        bf = self.bloom_device if kind == 'device' else self.bloom_card
+        if key in bf.exact_members():
+            return None
+        other = 'card' if kind == 'device' else 'device'
+        other_event = next((e for e in reversed(self.events)
+                            if e.get(other) == key), None)
+        if other_event is not None:
+            return {
+                'kind': other,
+                'message': f'This is a {other} ID; switch Query kind to {other}.',
+                'event_id': other_event.get('id'),
+                'choices': [{'kind': other, 'key': key,
+                             'label': f'Switch Query kind to {other}'}],
+            }
+        account_event = next((e for e in reversed(self.events)
+                              if e.get('account') == key), None)
+        if account_event is not None:
+            choices = []
+            for role in ('device', 'card'):
+                value = account_event.get(role)
+                if value:
+                    choices.append({'kind': role, 'key': value,
+                                    'label': f'Check {role} {value}'})
+            return {
+                'kind': 'account',
+                'message': 'This looks like an account ID. Bloom stores device and card IDs.',
+                'event_id': account_event.get('id'),
+                'choices': choices,
+            }
+        return None
 
     def fast_metrics(self):
         cm = {k: self._conf.get(k, 0) for k in ('tp', 'fp', 'tn', 'fn')}

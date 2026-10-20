@@ -145,7 +145,7 @@
   <div class="heading"><div><div class="eyebrow">SYLLABUS ALGORITHM · BLOOM FILTER</div><h1>Possibly seen before?</h1>
     <p class="one-liner"><b>In fraud detection:</b> a fixed-size, insert-only membership filter asks “was this device/card seen in a high-risk event?” without storing every identifier.</p></div>
     <button class="button primary" id="bloom-run-demo">▶ Run demo</button></div>
-  <div class="demo-bar"><div class="why"><b>One-click demo:</b> run a card-testing burst, then query an inserted identifier or find a false positive on an isolated filter.</div></div>
+  <div class="demo-bar"><div class="why"><b>One-click demo:</b> run a card-testing burst, then query an inserted identifier to see its bits light up.</div></div>
   <div class="split-grid">
     <div class="card">
       <div class="card-title"><h2>Query checker</h2><span class="chip" id="bloom-params">m=512, k=3</span></div>
@@ -154,10 +154,6 @@
       <button class="button primary" id="bloom-check">Check (query only)</button>
       <div class="bloom-result" id="bloom-query-result"><p class="hint">No query yet.</p></div>
       <p class="hint">Demo-only ground truth: a real Bloom filter cannot tell a true positive from a false positive. The exact side-set is never used for scoring and never reads labels.</p>
-      <div class="divider"></div>
-      <button class="button secondary" id="bloom-find-fp">Find a false positive</button>
-      <p class="hint">Runs on an isolated copy of the filter; session bits are untouched.</p>
-      <div id="bloom-fp-result"></div>
     </div>
     <div class="card">
       <div class="card-title"><h2>Filter bits</h2><span class="chip">fixed parameters</span></div>
@@ -405,6 +401,7 @@
 </div>
 <div id="toast" role="alert" class="toast hidden"></div>
   <script src="/apriori_view.js"></script>
+  <script src="/bloom_view.js"></script>
   <script src="/dgim_view.js"></script>
   <script src="/app.js"></script>
 </body>
