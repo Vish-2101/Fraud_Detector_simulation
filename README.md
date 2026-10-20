@@ -18,6 +18,10 @@ Run the tests:
 python -m unittest discover -s tests -v
 ```
 
+The UI helper tests run with Node's built-in test runner (Node 18+), invoked by
+`tests/test_apriori_view.py` and `tests/test_dgim_tab.py`. They need no npm
+packages.
+
 ## The dataset
 
 | Name | File | Content |
@@ -47,7 +51,7 @@ python tools/make_fixtures.py
 | `static/` | Demo-first dashboard: Live, Bloom, DGIM, Apriori, Evidence tabs; large-type layout and dark mode |
 | `scenarios.json` | Parameters for the in-memory one-click scenarios |
 | `tools/` | Fixture generation and optional baseline retraining |
-| `tests/` | `test_engine.py` + `test_data_model.py` |
+| `tests/` | Engine/data tests plus Python wrappers for the Node UI-helper tests (`apriori_view`, `dgim_view`) |
 
 ## Live tab
 
@@ -139,10 +143,12 @@ It is deliberately a **shadow comparator**, not the production decision maker. E
 - Demo script: [`docs/DGIM_TAB_WALKTHROUGH.md`](docs/DGIM_TAB_WALKTHROUGH.md).
 
 ### Apriori
+- Plain-language workflow: choose **All events** or the abuse-labelled comparison subset, then pick **Broad** (6% / 10%), **Balanced** (12% / 26%, default) or **Strict** (20% / 45%). Advanced sliders and suggested support remain available.
 - Level-wise frequent-itemset mining over fired-signal baskets (Bloom/DGIM markers excluded), subset pruning, ≤3 items.
-- Support/confidence/lift, auto-suggested support, fraud-only subset comparison.
-- **Time-split check**: mine on the first half, test confidence on the second.
-- Optional **offline label-as-item mode** adds `label:abuse/legitimate` for evaluation-only `signal → label` rules. Never used for scoring.
+- Patterns are shown as sentences with support, confidence, lift and a Strong / Moderate / No real link badge; selecting one opens its matching events with highlighted signal chips. An optional level stepper shows candidates, frequent sets and pruning.
+- **Time-split check**: mine on the first half, test confidence on the second, and label each rule Holds up / Does not hold up / Not enough data.
+- Optional **offline label-as-item mode** adds `label:abuse/legitimate` for evaluation-only `signal → label` rules. Never used for scoring, and label rules are hidden from the normal pattern and time-split lists.
+- Guided demo script: [`docs/APRIORI_TAB_WALKTHROUGH.md`](docs/APRIORI_TAB_WALKTHROUGH.md).
 
 ## Evidence tab
 
