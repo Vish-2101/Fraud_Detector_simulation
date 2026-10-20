@@ -53,9 +53,6 @@ const liveTime = () => fmtTime((state?.clock || 0) - (state?.dataset_start || 0)
 
 function eventView(e) {
   const mode = $('shadow-view')?.value || 'full';
-  if (mode === 'exact' && e.shadow) {
-    return {score: e.shadow.base_score ?? e.score, action: e.shadow.base_action ?? e.action, mode: 'exact'};
-  }
   if (mode === 'baseline' && e.baseline) {
     return {score: e.baseline.score, action: e.baseline.action, mode: 'baseline'};
   }
@@ -155,7 +152,7 @@ function renderEvents() {
   if (!(state.events || []).some(e => e.id === selectedId)) selectedId = state.events?.[0]?.id || null;
   $('events').innerHTML = rows.map(e => {
     const v = eventView(e);
-    const tag = v.mode !== 'full' ? `<small>${v.mode === 'exact' ? 'exact rules' : 'learned'}: ${num(v.score, 1)}</small>` : '';
+    const tag = v.mode === 'baseline' ? `<small>learned: ${num(v.score, 1)}</small>` : '';
     return `<tr data-id="${esc(e.id)}" class="${selectedId === e.id ? 'selected' : ''}" tabindex="0" aria-label="Inspect ${esc(e.id)}">
       <td><strong>${esc(e.type)}</strong><small>${esc(e.account)}</small>${tag}</td>
       <td>${eventTime(e)}</td>
@@ -186,7 +183,7 @@ function renderInspection() {
   $('current-score').textContent = num(v.score, 1);
   $('current-action').textContent = v.action;
   $('current-action').className = `badge ${v.action}`;
-  $('score-chip').textContent = v.mode === 'exact' ? 'exact rules only' : v.mode === 'baseline' ? 'learned baseline' : 'rules + Bloom/DGIM';
+  $('score-chip').textContent = v.mode === 'baseline' ? 'learned baseline' : 'Bloom/DGIM';
   renderBreakdown(e, v);
   const reasons = (e.reasons || []).map(r => `<div class="reason"><b>+${r.points}</b><span>${esc(r.reason)}</span></div>`).join('');
   const shadowLine = sh.base_score !== undefined
@@ -222,8 +219,7 @@ function renderBreakdown(e, view) {
     bar.innerHTML = `<i style="width:${score}%;background:var(--blue)"></i>`;
     return;
   }
-  let reasons = e.reasons || [];
-  if (view.mode === 'exact') reasons = reasons.filter(r => !/Bloom|DGIM/.test(r.reason));
+  const reasons = e.reasons || [];
   const total = Math.max(1, reasons.reduce((sum, r) => sum + r.points, 0));
   bar.innerHTML = reasons.length ? reasons.map((r, i) => `<i title="${esc(r.reason)} (+${r.points})" style="width:${r.points / total * 100}%;background:${COLORS[i % COLORS.length]}"></i>`).join('') : '';
 }
