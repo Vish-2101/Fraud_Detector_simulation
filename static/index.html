@@ -88,9 +88,9 @@
       <p class="hint" id="score-caption">Each rule contributes points to a capped 0–100 heuristic, not a probability. The learned baseline scores separately.</p>
       <div class="thresholds">
         <label for="review-range">Review from <b id="review-value">35</b></label>
-        <input id="review-range" type="range" min="1" max="99" value="35">
+        <input id="review-range" type="range" min="0" max="100" value="35">
         <label for="block-range">Block from <b id="block-value">65</b></label>
-        <input id="block-range" type="range" min="2" max="100" value="65">
+        <input id="block-range" type="range" min="0" max="100" value="65">
       </div>
       <div class="risk-scale"><span>NORMAL</span><span>ELEVATED</span><span>HIGHEST</span></div>
       <p class="hint" id="shadow-summary"></p>
@@ -244,11 +244,11 @@
     <div class="dgim-adjust-grid">
       <div>
         <label class="slider-label" for="dgim-window-range">How many recent events to count (N) <b id="dgim-window-value">60</b></label>
-        <input id="dgim-window-range" type="range" min="10" max="1000" step="10" value="60">
+        <input id="dgim-window-range" type="range" min="1" max="10000" step="1" value="60">
       </div>
       <div>
         <label class="slider-label" for="dgim-threshold-range">How many suspicious events count as a burst <b id="dgim-threshold-value">5</b></label>
-        <input id="dgim-threshold-range" type="range" min="1" max="30" value="5">
+        <input id="dgim-threshold-range" type="range" min="1" max="10000" step="1" value="5">
       </div>
     </div>
     <p class="hint" id="dgim-adjust-note">Changing these re-evaluates the verdict. Stored event scores are not rewritten.</p>
@@ -324,7 +324,7 @@
     <p class="hint" id="apriori-preset-note">Balanced is the default.</p>
     <details class="apriori-advanced">
       <summary>Advanced thresholds</summary>
-      <label class="slider-label" for="apriori-support">Minimum support <b id="apriori-support-value">12%</b></label><input id="apriori-support" type="range" min="1" max="60" value="12">
+      <label class="slider-label" for="apriori-support">Minimum support <b id="apriori-support-value">12%</b></label><input id="apriori-support" type="range" min="0" max="100" value="12">
       <button type="button" class="apriori-term" data-glossary="support" data-tip="The share of events that contain the pattern.">What does support mean?</button>
       <label class="slider-label" for="apriori-confidence">Minimum confidence <b id="apriori-confidence-value">26%</b></label><input id="apriori-confidence" type="range" min="0" max="100" value="26">
       <button type="button" class="apriori-term" data-glossary="confidence" data-tip="How often the conclusion appears when the premise appears.">What does confidence mean?</button>

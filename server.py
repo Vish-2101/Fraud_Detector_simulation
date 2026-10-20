@@ -183,8 +183,8 @@ class Handler(BaseHTTPRequestHandler):
                     detector.advance(body.get('seconds', 61))
                 elif self.path == '/api/thresholds':
                     review, block = body.get('review'), body.get('block')
-                    if any(isinstance(x, bool) or not isinstance(x, int) for x in [review, block]) or not 1 <= review < block <= 100:
-                        raise ValueError('Use 1 <= review threshold < block threshold <= 100.')
+                    if any(isinstance(x, bool) or not isinstance(x, int) for x in [review, block]) or not (0 <= review <= 100 and 0 <= block <= 100):
+                        raise ValueError('Use review and block thresholds between 0 and 100.')
                     detector.review_threshold, detector.block_threshold = review, block
                     detector.risk_cutoffs = {'elevated': review, 'highest': block}
                 elif self.path == '/api/config':
@@ -235,8 +235,8 @@ class Handler(BaseHTTPRequestHandler):
                     support = body.get('min_support')
                     confidence = body.get('min_confidence')
                     if support is not None:
-                        if isinstance(support, bool) or not isinstance(support, (int, float)) or not 0.01 <= support <= 1.0:
-                            raise ValueError('min_support must be between 0.01 and 1.0.')
+                        if isinstance(support, bool) or not isinstance(support, (int, float)) or not 0.0 <= support <= 1.0:
+                            raise ValueError('min_support must be between 0.0 and 1.0.')
                         detector.apriori_support = float(support)
                     if confidence is not None:
                         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1.0:
@@ -281,8 +281,8 @@ class Handler(BaseHTTPRequestHandler):
             detector.dgim_max_streams = value
         if 'min_support' in body:
             ms = body['min_support']
-            if isinstance(ms, bool) or not isinstance(ms, (int, float)) or not 0.01 <= ms <= 1.0:
-                raise ValueError('min_support must be between 0.01 and 1.0.')
+            if isinstance(ms, bool) or not isinstance(ms, (int, float)) or not 0.0 <= ms <= 1.0:
+                raise ValueError('min_support must be between 0.0 and 1.0.')
             detector.apriori_support = float(ms)
         if 'min_confidence' in body:
             mc = body['min_confidence']

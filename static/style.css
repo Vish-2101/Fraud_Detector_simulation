@@ -65,7 +65,7 @@ main{margin-left:224px;padding-bottom:40px}
 .button.secondary{background:var(--card);border-color:var(--line);color:var(--ink)}
 .button.secondary:hover{border-color:var(--purple)}
 .icon-button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;font-size:13px;color:var(--muted)}
-input[type=range]{accent-color:var(--purple);width:100%}
+input[type=range]{accent-color:var(--purple);width:100%;padding:0;border:0;border-radius:0;background:none;min-height:0}
 input,select{border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);font-size:12px;min-width:0}
 input:focus,select:focus,button:focus-visible{outline:2px solid var(--purple);outline-offset:1px}
 label{font-size:11px;color:var(--muted)}

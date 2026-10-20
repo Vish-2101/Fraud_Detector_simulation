@@ -70,7 +70,7 @@ The generator uses a fixed seed and emits the same bytes on every run. `tests/te
 - **Decision inspector** shows every reason with points, window counts, Bloom result, DGIM estimate vs exact, and the exact-rules delta.
 - **Entity timeline** opens from any device/card/account in the inspector.
 - **Custom event** form evaluates one event and advances one simulated second.
-- **Threshold sliders** re-decide stored scores without rewriting history.
+- **Threshold sliders** re-decide stored scores without rewriting history. The review and block handles each slide the full 0–100 range independently and may cross.
 - **Export CSV** writes the current session with formula-injection defence.
 
 ## Event pipeline

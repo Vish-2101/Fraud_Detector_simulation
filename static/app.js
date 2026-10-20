@@ -590,7 +590,7 @@ function renderAprioriConfig() {
   const confidence = Number(state.apriori_config.min_confidence || 0);
   const supportEl = $('apriori-support');
   const confidenceEl = $('apriori-confidence');
-  if (supportEl && document.activeElement !== supportEl) supportEl.value = Math.max(1, Math.round(support * 100));
+  if (supportEl && document.activeElement !== supportEl) supportEl.value = Math.max(0, Math.round(support * 100));
   if (confidenceEl && document.activeElement !== confidenceEl) confidenceEl.value = Math.round(confidence * 100);
   $('apriori-support-value').textContent = view.formatPercent(support);
   $('apriori-confidence-value').textContent = `${Math.round(confidence * 100)}%`;
@@ -1344,8 +1344,7 @@ function wire() {
   for (const k of ['review', 'block']) {
     $(`${k}-range`).oninput = () => { $(`${k}-value`).textContent = $(`${k}-range`).value; };
     $(`${k}-range`).onchange = async () => {
-      let review = Number($('review-range').value), block = Number($('block-range').value);
-      if (review >= block) { if (k === 'review') block = Math.min(100, review + 1); else review = Math.max(1, block - 1); }
+      const review = Number($('review-range').value), block = Number($('block-range').value);
       try { render(await api('thresholds', {review, block})); } catch (error) { toast(error.message); render(state); }
     };
   }
