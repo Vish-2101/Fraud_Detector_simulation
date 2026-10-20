@@ -362,7 +362,7 @@
   <div class="demo-bar"><div><span class="demo-label">EVIDENCE LADDER</span><strong>Same split, seven honest rows</strong></div><div class="hint" id="evidence-split"></div></div>
   <div class="card"><div class="card-title"><h2>Comparison ladder</h2><span class="chip" id="evidence-threshold">review ≥ —</span></div>
     <p class="hint" id="ladder-abuse-count">Replay the synthetic demo to compute the held-out comparison.</p>
-    <div class="table-scroll"><table class="compare-table ladder-table"><thead><tr><th>ROW</th><th>TRAINED?</th><th>USES RULE SCORE?</th><th>USES BLOOM/DGIM?</th><th>PR-AUC (95% CI)</th><th id="recall-1pct-header">RECALL @ 1% FPR</th><th>RECALL @ 5% FPR (95% CI)</th><th>PRECISION / RECALL / FPR @ REVIEW</th></tr></thead><tbody id="evidence-ladder"><tr><td colspan="8" class="hint">Playback state only. Replay to compute the ladder.</td></tr></tbody></table></div>
+    <div class="table-scroll"><table class="compare-table ladder-table"><thead><tr><th>ROW</th><th>TRAINED?</th><th>USES RULE SCORE?</th><th>USES BLOOM/DGIM?</th><th>PR-AUC</th><th id="recall-1pct-header">RECALL @ 1% FPR</th><th>RECALL @ 5% FPR</th><th>PRECISION / RECALL / FPR @ REVIEW</th></tr></thead><tbody id="evidence-ladder"><tr><td colspan="8" class="hint">Playback state only. Replay to compute the ladder.</td></tr></tbody></table></div>
     <p class="hint" id="ladder-few-warning"></p>
     <p class="hint" id="baseline-source">Models: models/ladder_*.json, trained offline by tools/train_ladder.py.</p></div>
   <div class="card"><div class="card-title"><h2>How to read the ladder</h2><span class="chip">compare, don't rank blindly</span></div>

@@ -903,9 +903,9 @@ function renderEvidence() {
       <td>${row.trained ? 'yes' : 'no'}</td>
       <td>${row.uses_rule_score ? 'yes' : 'no'}</td>
       <td>${row.uses_bloom_dgim ? 'yes' : 'no'}</td>
-      <td>${cell(row, `<b>${num(row.pr_auc, 3)}</b><small class="ci">95% CI ${ci(row.pr_auc_ci)}</small>`)}</td>
+      <td>${cell(row, `<b>${num(row.pr_auc, 3)}</b><small class="ci">${ci(row.pr_auc_ci)}</small>`)}</td>
       <td class="${fewAbuse ? 'muted-col' : ''}">${cell(row, recall(row, 'recall_at_1pct_fpr'))}</td>
-      <td>${cell(row, `${recall(row, 'recall_at_5pct_fpr')}<small class="ci">95% CI ${ci(row.recall_at_5pct_fpr_ci)}</small>`)}</td>
+      <td>${cell(row, `${recall(row, 'recall_at_5pct_fpr')}<small class="ci">${ci(row.recall_at_5pct_fpr_ci)}</small>`)}</td>
       <td>${cell(row, `${pct(row.precision)} / ${pct(row.recall)} / ${pct(row.false_positive_rate)}`)}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" class="hint">No ladder rows available.</td></tr>';
