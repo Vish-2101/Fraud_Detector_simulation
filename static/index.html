@@ -171,10 +171,6 @@
       <p class="hint">Insert-only means expiry of exact counters does not delete bits. The optional rotating mode keeps the old generation for queries and starts a new one for inserts, so the filter can forget. A positive is never proof: the scoring rule requires corroboration and adds at most +10.</p>
     </div>
   </div>
-  <div class="card advantages"><div class="card-title"><h2>Advantages / Limitations</h2></div>
-    <div class="two-col"><div><h4>Advantages</h4><ul><li>O(m) bits regardless of how many identifiers are remembered; O(k) query/insert.</li><li>No false negatives for inserted keys; deterministic keyed BLAKE2b hashing.</li><li>Good fit for “has this bad identifier been seen?” with a privacy-friendly footprint.</li></ul></div>
-    <div><h4>Limitations</h4><ul><li>False positives; positive ≠ proof of fraud.</li><li>Insert-only cannot remove an identifier unless a rotating generation forgets it.</li><li>Decision feedback can reinforce past flags; bounded here by a corroboration requirement.</li><li>Missing/rotated device identifiers limit what can be remembered.</li></ul></div></div>
-  </div>
 </section>
 
 <section class="tab-panel hidden" id="tab-dgim">
@@ -200,10 +196,6 @@
       <div id="dgim-demo-summary" class="hint">Run the scale demo to plot the estimate against the exact count.</div>
       <p class="hint">Memory-bounded replay: per-entity streams are capped with an LRU (512 streams by default), so replaying 50k+ events does not grow without bound.</p>
     </div>
-  </div>
-  <div class="card advantages"><div class="card-title"><h2>Advantages / Limitations</h2></div>
-    <div class="two-col"><div><h4>Advantages</h4><ul><li>Sublinear storage: O(log²N) buckets for a window of N bits.</li><li>Streaming updates are amortized O(log N); no need to keep every event.</li><li>Works well for bursts where exact per-entity counters are too expensive.</li></ul></div>
-    <div><h4>Limitations</h4><ul><li>Approximate: the classical bound is ~50% relative error, not exact.</li><li>Count-based window, not event-time; it is only “60 seconds” when events arrive at 1/s.</li><li>The suspicious bit is a proxy definition; it can miss label-bearing context.</li><li>Contributes modest points and cannot block alone.</li></ul></div></div>
   </div>
 </section>
 
@@ -237,10 +229,6 @@
       <p class="warning">Circular-pattern warning: baskets are rule-derived, and labels only appear in the offline evaluation mode or as a subset selector. High support or lift is not causation; a stable time-split check is stronger evidence than a single-session pattern.</p>
     </div>
   </div>
-  <div class="card advantages"><div class="card-title"><h2>Advantages / Limitations</h2></div>
-    <div class="two-col"><div><h4>Advantages</h4><ul><li>Interpretable itemsets and rules with support, confidence and lift.</li><li>Subset pruning makes the level-wise candidate search tractable for small baskets.</li><li>Useful for hypothesis generation and for explaining co-occurring signals.</li></ul></div>
-    <div><h4>Limitations</h4><ul><li>Frequent co-occurrence is not causation and not a calibrated risk score.</li><li>Support hides rare fraud patterns in imbalanced data; the auto-suggest and fraud-only view help.</li><li>Baskets come from the same rules, so patterns can be circular.</li><li>Offline only; cost grows with item vocabulary and basket count.</li></ul></div></div>
-  </div>
 </section>
 
 <section class="tab-panel hidden" id="tab-evidence">
@@ -256,7 +244,7 @@
     <div class="card"><div class="card-title"><h2>Learned baseline PR curve</h2><span class="chip" id="prauc-baseline">PR-AUC —</span></div><div id="pr-chart-baseline" class="svg-wrap"></div></div>
   </div>
   <div class="card"><div class="card-title"><h2>Per-rule ablation</h2><span class="chip">flip counts when removed</span></div><div id="ablation"></div><p class="hint">A flip means removing that rule changes review/block to another action on the temporal test split. Counts of 0 are honest: many rules overlap or never fire on a dataset.</p></div>
-  <div class="card advantages"><div class="card-title"><h2>Read this honestly</h2></div><div class="two-col"><div><h4>What the numbers mean</h4><ul><li>Positive = review or block under the current review threshold.</li><li>PR-AUC is average precision over the held-out test split.</li><li>Recall@FPR is the best recall at or below that false-positive rate.</li></ul></div><div><h4>Limitations</h4><ul><li>Labels are authored for teaching, so results demonstrate mechanics, not real-world fraud rates.</li><li>The fixture is small and synthetic; one split is not a production estimate.</li><li>Proxy signals and approximate algorithms are documented in the README.</li></ul></div></div></div>
+  <div class="card"><div class="card-title"><h2>What the numbers mean</h2></div><ul><li>Positive = review or block under the current review threshold.</li><li>PR-AUC is average precision over the held-out test split.</li><li>Recall@FPR is the best recall at or below that false-positive rate.</li></ul></div>
 </section>
 
 <footer>RADAR LAB <span>event-time stream → features → rules → action → temporal evaluation</span></footer>

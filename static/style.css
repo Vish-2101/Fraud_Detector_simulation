@@ -177,7 +177,6 @@ td small{display:block;color:var(--muted);font-size:10px}
 .compare-table td:first-child{color:var(--muted);font-size:12px}
 .compare-table td:not(:first-child),.compare-table th:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
 .compare-table td:not(:first-child){font-weight:600}
-.advantages ul{font-size:12px;color:var(--muted)}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .split-grid>.card{height:fit-content}
 .entity-card{margin-bottom:14px}
