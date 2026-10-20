@@ -3,6 +3,7 @@
 The offline demo ships one committed dataset: a small synthetic event log.
 No external or raw datasets are read.
 """
+import hashlib
 import json
 from pathlib import Path
 
@@ -18,6 +19,18 @@ DATASETS = {
         'note': 'Authored scenarios for classroom demonstrations. Labels are authored.',
     },
 }
+
+
+def fixture_sha256(name='synthetic'):
+    """Return the SHA-256 of a dataset fixture, or None when unavailable."""
+    meta = DATASETS.get(name)
+    if not meta or not meta['path'].exists():
+        return None
+    digest = hashlib.sha256()
+    with meta['path'].open('rb') as fh:
+        for block in iter(lambda: fh.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _count_jsonl(path):

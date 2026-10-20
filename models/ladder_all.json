@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "name": "all",
+  "feature_set": "all",
+  "features": [
+    "amount_log",
+    "amount_ge_1000",
+    "disposable",
+    "country_mismatch",
+    "failed",
+    "device_accounts",
+    "card_attempts",
+    "device_trials",
+    "ip_accounts",
+    "dgim_device_est",
+    "bloom_device_seen",
+    "bloom_card_seen",
+    "rule_score"
+  ],
+  "weights": [
+    -1.0191156834618755,
+    -0.06314348681535119,
+    0.6942343697607353,
+    -0.23013032855043017,
+    0.4633241984013142,
+    0.19823748277238623,
+    -0.004464213501715798,
+    -0.051581804373303994,
+    -0.39958433374371305,
+    0.2727970997143976,
+    0.06724409263999173,
+    0.26138010052591043,
+    1.704525718380951
+  ],
+  "intercept": -1.737470597076326,
+  "solver": "sklearn.linear_model.LogisticRegression",
+  "iterations": 16,
+  "mean": [
+    2.6291233026086376,
+    0.005847953216374269,
+    0.05906432748538012,
+    0.04327485380116959,
+    0.050292397660818715,
+    1.0666666666666667,
+    0.8298245614035088,
+    0.1216374269005848,
+    1.1456140350877193,
+    0.6719298245614035,
+    0.2239766081871345,
+    0.1497076023391813,
+    6.733918128654971
+  ],
+  "scale": [
+    1.6323303839291943,
+    0.07624798134739837,
+    0.23574505870554574,
+    0.20347516022762227,
+    0.21854764331454957,
+    0.3440386215229524,
+    0.6219564243439385,
+    0.4165434310420172,
+    0.7756310787541366,
+    1.5851932993313405,
+    0.41690656887618743,
+    0.35678457946082015,
+    18.114869546407434
+  ],
+  "C": 0.1,
+  "fixture_sha256": "bd9bcbe3c7027a499c6764302c9ef8ab269ab6a30001b14aae273f980d8af17c",
+  "training": {
+    "dataset": "synthetic",
+    "window_seconds": 60,
+    "train_events": 1710,
+    "train_positives": 233,
+    "test_events": 733,
+    "test_positives": 171,
+    "validation_events": 342,
+    "validation_positives": 59,
+    "fit_events": 1368,
+    "events_replayed": 2519,
+    "time_range": {
+      "start_ts": 1203.224,
+      "end_ts": 22245.643
+    },
+    "temporal_split": "first 70% by event time for training; last 30% held out",
+    "validation_split": "last 20% of the training window, by event time",
+    "label_policy": "labels only build y; every feature is label-free",
+    "validation_average_precision": 0.9921
+  },
+  "top_weights": [
+    {
+      "feature": "rule_score",
+      "weight": 1.7045
+    },
+    {
+      "feature": "amount_log",
+      "weight": -1.0191
+    },
+    {
+      "feature": "disposable",
+      "weight": 0.6942
+    },
+    {
+      "feature": "failed",
+      "weight": 0.4633
+    },
+    {
+      "feature": "ip_accounts",
+      "weight": -0.3996
+    }
+  ],
+  "score_mapping": "score = round(100 * sigmoid(z), 4); not a calibrated probability"
+}

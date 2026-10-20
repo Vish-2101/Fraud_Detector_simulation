@@ -80,6 +80,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(detector.state(dgim_entity=entity,
                                                  dgim_entity_kind=entity_kind,
                                                  light=light))
+            if route == '/api/evidence':
+                qs = parse_qs(parsed.query)
+                bootstrap = (qs.get('bootstrap') or ['1'])[0] not in ('0', 'false')
+                return self.reply(detector.evaluation(bootstrap=bootstrap))
             if route == '/api/datasets':
                 return self.reply({'datasets': catalog(), 'default': DEFAULT_REPLAY,
                                    'limits': {'max_events': detector.LIMIT}})
@@ -322,6 +326,9 @@ if __name__ == '__main__':
         detector.window_seconds = detector.WINDOW = args.window_seconds
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
     print(f'Radar Lab is running at http://127.0.0.1:{args.port}', flush=True)
+    if detector.ladder_status.get('stale'):
+        print(f"WARNING: {detector.ladder_status['message']} "
+              f"(python tools/train_ladder.py)", flush=True)
     print('Press Ctrl+C to stop. All data stays in memory on this computer.', flush=True)
     try:
         server.serve_forever()

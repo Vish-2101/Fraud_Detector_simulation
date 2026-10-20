@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "name": "raw_bd",
+  "feature_set": "raw_bd",
+  "features": [
+    "amount",
+    "amount_log",
+    "amount_ge_1000",
+    "disposable",
+    "forwarding_email",
+    "country_mismatch",
+    "failed",
+    "type_payment",
+    "type_signup",
+    "type_trial",
+    "type_usage",
+    "type_cancel",
+    "device_accounts",
+    "card_attempts",
+    "device_trials",
+    "ip_accounts",
+    "bloom_device_seen",
+    "bloom_card_seen",
+    "dgim_device_est"
+  ],
+  "weights": [
+    -2.163488732647158,
+    -0.43735107490713193,
+    0.06007241331825061,
+    2.542589385525761,
+    0.7781524123006532,
+    0.20850732654844484,
+    1.0165261389958895,
+    0.6320482967874385,
+    -0.3507058144028239,
+    -0.7247273144045379,
+    0.27947133806257746,
+    -0.3706860718372481,
+    0.8255042645469612,
+    1.1115059171045392,
+    2.867393187734588,
+    -0.4361852193137529,
+    0.36449073677363325,
+    0.3887529898401228,
+    -0.008278894800127556
+  ],
+  "intercept": -2.073822078969361,
+  "solver": "sklearn.linear_model.LogisticRegression",
+  "iterations": 31,
+  "mean": [
+    47.32136842105265,
+    2.6291233026086376,
+    0.005847953216374269,
+    0.05906432748538012,
+    0.006432748538011696,
+    0.04327485380116959,
+    0.050292397660818715,
+    0.7771929824561403,
+    0.1111111111111111,
+    0.06140350877192982,
+    0.04152046783625731,
+    0.008771929824561403,
+    1.0666666666666667,
+    0.8298245614035088,
+    0.1216374269005848,
+    1.1456140350877193,
+    0.2239766081871345,
+    0.1497076023391813,
+    0.6719298245614035
+  ],
+  "scale": [
+    164.47197591434355,
+    1.6323303839291943,
+    0.07624798134739837,
+    0.23574505870554574,
+    0.07994603357427084,
+    0.20347516022762227,
+    0.21854764331454957,
+    0.4161298480968101,
+    0.31426968052735615,
+    0.2400689856737528,
+    0.1994906478683017,
+    0.0932468930941629,
+    0.3440386215229524,
+    0.6219564243439385,
+    0.4165434310420172,
+    0.7756310787541366,
+    0.41690656887618743,
+    0.35678457946082015,
+    1.5851932993313405
+  ],
+  "C": 10.0,
+  "fixture_sha256": "bd9bcbe3c7027a499c6764302c9ef8ab269ab6a30001b14aae273f980d8af17c",
+  "training": {
+    "dataset": "synthetic",
+    "window_seconds": 60,
+    "train_events": 1710,
+    "train_positives": 233,
+    "test_events": 733,
+    "test_positives": 171,
+    "validation_events": 342,
+    "validation_positives": 59,
+    "fit_events": 1368,
+    "events_replayed": 2519,
+    "time_range": {
+      "start_ts": 1203.224,
+      "end_ts": 22245.643
+    },
+    "temporal_split": "first 70% by event time for training; last 30% held out",
+    "validation_split": "last 20% of the training window, by event time",
+    "label_policy": "labels only build y; every feature is label-free",
+    "validation_average_precision": 0.9764
+  },
+  "top_weights": [
+    {
+      "feature": "device_trials",
+      "weight": 2.8674
+    },
+    {
+      "feature": "disposable",
+      "weight": 2.5426
+    },
+    {
+      "feature": "amount",
+      "weight": -2.1635
+    },
+    {
+      "feature": "card_attempts",
+      "weight": 1.1115
+    },
+    {
+      "feature": "failed",
+      "weight": 1.0165
+    }
+  ],
+  "score_mapping": "score = round(100 * sigmoid(z), 4); not a calibrated probability"
+}

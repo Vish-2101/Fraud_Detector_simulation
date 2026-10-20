@@ -25,6 +25,8 @@ let dgimSearch = '';
 let dgimLoading = false;
 let dgimError = '';
 let dgimUpdateNote = '';
+let evidenceBusy = false;
+let evidenceError = '';
 let audioCtx = null;
 let soundOn = localStorage.getItem('radar-sound') !== 'off';
 
@@ -879,72 +881,115 @@ async function aprioriGuidedDemo() {
 
 function renderEvidence() {
   const ev = state?.evaluation;
+  const status = ev?.ladder_models || state?.ladder_status;
+  const stale = $('ladder-stale');
+  if (status?.message) {
+    stale.textContent = status.message;
+    stale.classList.remove('hidden');
+  } else {
+    stale.textContent = '';
+    stale.classList.add('hidden');
+  }
   $('baseline-source').textContent = baselineSource();
   if (!ev) {
     $('evidence-split').textContent = 'Replay the synthetic demo to compute the comparison.';
     $('evidence-threshold').textContent = 'review ≥ —';
-    $('evidence-compare').innerHTML = '<tr><td colspan="3" class="hint">Playback state only. Open this tab after replaying the synthetic demo to compute full evidence.</td></tr>';
-    $('prauc-full').textContent = 'PR-AUC —';
-    $('prauc-baseline').textContent = 'PR-AUC —';
-    $('pr-chart-full').innerHTML = '';
-    $('pr-chart-baseline').innerHTML = '';
+    $('ladder-abuse-count').textContent = 'Replay the synthetic demo to compute the held-out comparison.';
+    $('ladder-few-warning').textContent = '';
+    $('evidence-ladder').innerHTML = '<tr><td colspan="8" class="hint">Playback state only. Replay to compute the ladder.</td></tr>';
+    $('ladder-pr-chart').innerHTML = '';
+    $('ladder-model-cards').innerHTML = '';
     return;
   }
-  const full = ev.views?.full || {available: false};
-  const baseline = ev.views?.baseline || {available: false};
-  const value = (v, read, fmt = x => x) => {
-    if (!v.available) return '—';
-    const x = read(v);
-    return x === undefined || x === null ? '—' : fmt(x);
-  };
-  const count = (v, key) => v.available ? (v.confusion?.[key] ?? 0) : '—';
-  const recall = (v, key) => value(v, x => x[key]?.recall, pct);
-  const rows = [
-    ['True positives', count(full, 'tp'), count(baseline, 'tp')],
-    ['False positives', count(full, 'fp'), count(baseline, 'fp')],
-    ['False negatives', count(full, 'fn'), count(baseline, 'fn')],
-    ['True negatives', count(full, 'tn'), count(baseline, 'tn')],
-    ['Precision', value(full, v => v.precision, pct), value(baseline, v => v.precision, pct)],
-    ['Recall', value(full, v => v.recall, pct), value(baseline, v => v.recall, pct)],
-    ['False-positive rate', value(full, v => v.false_positive_rate, pct), value(baseline, v => v.false_positive_rate, pct)],
-    ['PR-AUC', value(full, v => v.pr_auc, x => num(x, 3)), value(baseline, v => v.pr_auc, x => num(x, 3))],
-    ['Recall @ 1% FPR', recall(full, 'recall_at_1pct_fpr'), recall(baseline, 'recall_at_1pct_fpr')],
-    ['Recall @ 5% FPR', recall(full, 'recall_at_5pct_fpr'), recall(baseline, 'recall_at_5pct_fpr')],
-    ['Labeled test events', value(full, v => v.labeled), value(baseline, v => v.labeled)],
-    ['Positive test events', value(full, v => v.positives), value(baseline, v => v.positives)],
-  ];
+  const rows = ev.ladder || [];
+  const diag = ev.ladder_diagnostics || {};
+  const fewAbuse = Boolean(diag.few_abuse_events);
+  $('recall-1pct-header').classList.toggle('muted-col', fewAbuse);
   $('evidence-split').textContent = `Test split: last ${ev.split.test_n} of ${ev.split.train_n + ev.split.test_n} labeled events · ${ev.method}`;
   $('evidence-threshold').textContent = `review ≥ ${ev.thresholds.review}`;
-  $('evidence-compare').innerHTML = rows.map(([metric, f, b]) => `<tr><td>${metric}</td><td>${f}</td><td>${b}</td></tr>`).join('');
-  $('prauc-full').textContent = full.available ? `PR-AUC ${num(full.pr_auc, 3)}` : 'PR-AUC —';
-  $('prauc-baseline').textContent = baseline.available ? `PR-AUC ${num(baseline.pr_auc, 3)}` : 'PR-AUC —';
-  $('pr-chart-full').innerHTML = full.available ? svgPrChart(full.pr_curve || []) : '<p class="hint">Bloom/DGIM view unavailable.</p>';
-  $('pr-chart-baseline').innerHTML = baseline.available ? svgPrChart(baseline.pr_curve || []) : '<p class="hint">Learned baseline unavailable.</p>';
+  $('ladder-abuse-count').textContent = `${diag.test_positives ?? 0} abuse events in the held-out set · ${ev.split.test_n} test events.`;
+  $('ladder-few-warning').textContent = diag.warning || '';
+  const ci = value => value && value.low !== null && value.low !== undefined
+    ? `[${num(value.low, 3)}, ${num(value.high, 3)}]`
+    : (diag.bootstrap?.done ? '—' : 'computing…');
+  const recall = (row, key) => row.available ? pct(row[key]?.recall) : '—';
+  const cell = (row, html) => row.available ? html : '—';
+  $('evidence-ladder').innerHTML = rows.map(row => {
+    const label = `<b>${esc(row.label)}</b>${row.reference ? '<small class="ci">reference</small>' : ''}`;
+    return `<tr class="${row.reference ? 'reference-row' : ''}">
+      <td>${label}</td>
+      <td>${row.trained ? 'yes' : 'no'}</td>
+      <td>${row.uses_rule_score ? 'yes' : 'no'}</td>
+      <td>${row.uses_bloom_dgim ? 'yes' : 'no'}</td>
+      <td>${cell(row, `<b>${num(row.pr_auc, 3)}</b><small class="ci">95% CI ${ci(row.pr_auc_ci)}</small>`)}</td>
+      <td class="${fewAbuse ? 'muted-col' : ''}">${cell(row, recall(row, 'recall_at_1pct_fpr'))}</td>
+      <td>${cell(row, `${recall(row, 'recall_at_5pct_fpr')}<small class="ci">95% CI ${ci(row.recall_at_5pct_fpr_ci)}</small>`)}</td>
+      <td>${cell(row, `${pct(row.precision)} / ${pct(row.recall)} / ${pct(row.false_positive_rate)}`)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" class="hint">No ladder rows available.</td></tr>';
+  $('ladder-pr-chart').innerHTML = svgLadderPrChart(rows);
+  renderLadderModelCards(status);
   const ablation = ev.ablation || [];
   const maxFlip = Math.max(1, ...ablation.map(a => a.flips));
   $('ablation').innerHTML = ablation.length ? ablation.map(a => `<div class="pattern"><div style="display:flex;justify-content:space-between;gap:10px"><span>${esc(a.rule)}</span><b style="margin:0">${a.flips} flip${a.flips === 1 ? '' : 's'} / ${a.events} events</b></div><div style="height:7px;background:var(--line);border-radius:5px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;width:${a.flips / maxFlip * 100}%;background:var(--red)"></i></div></div>`).join('') : '<p class="hint">No rule-ablation data on the test split.</p>';
 }
 
-function baselineSource() {
-  const t = state?.baseline_training;
-  if (!t) return 'Baseline source: the running app loads models/baseline.json.';
-  return `Baseline source: the running app loads models/baseline.json. That committed model was trained offline by tools/train_baseline.py on the ${t.dataset} fixture: ${t.train_events} training events (${t.train_positives} positives), ${t.test_events} held-out events, using a temporal split — ${t.temporal_split}.`;
+function renderLadderModelCards(status) {
+  const names = {raw: 'LR-raw', raw_bd: 'LR-raw+BD', all: 'LR-all'};
+  const models = (status?.models || []).filter(model => names[model.name]);
+  $('ladder-model-cards').innerHTML = models.map(model => {
+    if (!model.available) return `<div class="model-card"><b>${names[model.name]}</b><p class="hint">model unavailable — retrain</p></div>`;
+    const card = model.card || {};
+    const range = card.time_range;
+    const top = (card.top_weights || []).map(item => `${esc(item.feature)} ${num(item.weight, 3)}`).join(' · ');
+    return `<div class="model-card"><b>${names[model.name]}</b>
+      <p class="hint">C=${esc(card.C)} · ${card.train_events ?? '—'} rows trained (${card.train_positives ?? '—'} abuse) · test ${card.test_events ?? '—'} (${card.test_positives ?? '—'} abuse)</p>
+      <p class="hint">Training time: ${range ? `${fmtTime(range.start_ts)}–${fmtTime(range.end_ts)}` : '—'}</p>
+      <p class="hint"><b>Top weights by magnitude:</b> ${top || '—'}</p></div>`;
+  }).join('') || '<p class="hint">Learned models are unavailable. Run python tools/train_ladder.py.</p>';
 }
 
-function svgPrChart(points) {
-  if (!points.length) return '<p class="hint">No positive test events, so the PR curve is undefined.</p>';
-  const w = 520, h = 200, pad = 30;
-  const x = r => pad + r * (w - pad * 1.4);
-  const y = p => h - pad - p * (h - pad * 1.6);
-  const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(p.recall).toFixed(1)},${y(p.precision).toFixed(1)}`).join(' ');
-  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Precision recall curve">
-    <line x1="${pad}" y1="${h - pad}" x2="${w - 10}" y2="${h - pad}" stroke="var(--line)"/>
-    <line x1="${pad}" y1="${pad / 2}" x2="${pad}" y2="${h - pad}" stroke="var(--line)"/>
-    <text x="${w / 2}" y="${h - 6}" font-size="9" fill="var(--muted)" text-anchor="middle">recall</text>
-    <text x="8" y="16" font-size="9" fill="var(--muted)">precision</text>
-    <path d="${path}" fill="none" stroke="var(--purple)" stroke-width="2.2"/>
-    <circle cx="${x(points[0].recall)}" cy="${y(points[0].precision)}" r="3" fill="var(--amber)"/>
-  </svg>`;
+function baselineSource() {
+  const status = state?.evaluation?.ladder_models || state?.ladder_status;
+  const count = status?.models?.filter(model => model.available).length ?? 0;
+  return `Models: the running app loads models/ladder_*.json (${count}/3 available), trained offline by tools/train_ladder.py on the synthetic fixture with a strict event-time split.`;
+}
+
+function svgLadderPrChart(rows) {
+  const wanted = [
+    ['exact_rules', 'Exact rules', '#6554d9'],
+    ['full_engine', 'Full engine', '#3b7dd8'],
+    ['lr_raw', 'LR-raw', '#229578'],
+    ['lr_raw_bd', 'LR-raw+BD', '#bc8837'],
+    ['lr_all', 'LR-all (reference)', '#de6378'],
+  ];
+  const series = wanted.map(([id, label, color]) => {
+    const row = rows.find(item => item.id === id);
+    return {label, color, points: row?.available ? (row.pr_curve || []) : []};
+  }).filter(item => item.points.length);
+  if (!series.length) return '<p class="hint">No positive test events, so the PR curves are undefined.</p>';
+  const w = 660, h = 240, pad = 38;
+  const x = r => pad + r * (w - pad * 1.3);
+  const y = p => h - pad - p * (h - pad * 1.5);
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(f =>
+    `<line x1="${pad}" y1="${y(f)}" x2="${w - 16}" y2="${y(f)}" stroke="var(--line)"/>` +
+    `<text x="${pad - 6}" y="${y(f) + 3}" font-size="9" fill="var(--muted)" text-anchor="end">${f}</text>`).join('');
+  const paths = series.map(item => {
+    const d = item.points.map((point, index) =>
+      `${index ? 'L' : 'M'}${x(point.recall).toFixed(1)},${y(point.precision).toFixed(1)}`).join(' ');
+    return `<path d="${d}" fill="none" stroke="${item.color}" stroke-width="2.1"/>`;
+  }).join('');
+  const legend = series.map(item =>
+    `<span><i style="background:${item.color}"></i>${esc(item.label)}</span>`).join('');
+  return `<div class="chart-legend">${legend}</div>
+    <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Evidence ladder precision recall curves">
+      ${grid}
+      <line x1="${pad}" y1="${h - pad}" x2="${w - 16}" y2="${h - pad}" stroke="var(--line)"/>
+      <line x1="${pad}" y1="${pad / 2}" x2="${pad}" y2="${h - pad}" stroke="var(--line)"/>
+      <text x="${w / 2}" y="${h - 8}" font-size="10" fill="var(--muted)" text-anchor="middle">recall</text>
+      <text x="8" y="16" font-size="10" fill="var(--muted)">precision</text>
+      ${paths}
+    </svg>`;
 }
 
 function svgLineChart(samples) {
@@ -1009,6 +1054,30 @@ async function refreshFull() {
     const s = await apiGet('state');
     if (s) render(s);
   } catch (error) { toast(error.message); }
+}
+
+async function loadEvidence() {
+  if (evidenceBusy) return;
+  evidenceBusy = true;
+  evidenceError = '';
+  renderEvidence();
+  try {
+    const ev = await apiGet('evidence');
+    if (state) {
+      state.evaluation = ev;
+      if (ev.ladder_models) state.ladder_status = ev.ladder_models;
+    }
+    if (ev?.ladder_diagnostics?.bootstrap?.done) {
+      $('ladder-few-warning').textContent = ev.ladder_diagnostics.warning || '';
+    }
+    renderEvidence();
+  } catch (error) {
+    evidenceError = error.message;
+    $('ladder-abuse-count').textContent = `Could not load bootstrap intervals: ${error.message}`;
+    toast(error.message);
+  } finally {
+    evidenceBusy = false;
+  }
 }
 
 function stopPlayback() {
@@ -1141,7 +1210,9 @@ async function updateDgimConfig(payload, note) {
 async function switchTab(name) {
   document.querySelectorAll('.nav').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== `tab-${name}`));
-  if (name !== 'live') {
+  if (name === 'evidence') {
+    await loadEvidence();
+  } else if (name !== 'live') {
     if (!state?.evaluation || !state?.apriori_levels) await refreshFull();
   }
   if (name === 'apriori' && !aprioriPresetReady) {
@@ -1168,7 +1239,7 @@ const guidedSteps = [
   {caption: '<b>Step 4 — Bloom filter.</b> A fixed-size bit array answers “possibly seen before?”. Query before insert; first sightings are definitely absent. A false positive is possible, so the scoring rule requires corroboration. The rotating mode lets the filter forget.', action: async () => { await bloomRunDemo(); switchTab('bloom'); }},
   {caption: '<b>Step 5 — DGIM.</b> Estimate suspicious 1s in the last N stream elements with O(log N) buckets (O(log² N) bits in total). The worst-case stream shows the estimate tracking the exact count while bucket storage stays far below exact storage.', action: async () => { await dgimRunDemo('worst'); switchTab('dgim'); }},
   {caption: '<b>Step 6 — Apriori.</b> Run mixed traffic, choose Balanced, read the strongest pattern and check whether it holds up in the second half. Apriori only describes co-occurrence; it never scores an event.', action: async () => { switchTab('apriori'); await aprioriGuidedDemo(); }},
-  {caption: '<b>Step 7 — Evidence.</b> Temporal split: first 70% by event time for tuning/training, last 30% held out. Compare Bloom/DGIM and the learned baseline side by side on confusion counts, precision, recall, FPR, PR-AUC and recall@1%/5% FPR, plus per-rule ablations. Report inactive rules honestly.', action: async () => { await refreshFull(); switchTab('evidence'); }},
+  {caption: '<b>Step 7 — Evidence.</b> Temporal split: first 70% by event time for tuning/training, last 30% held out. The seven-row ladder compares allow-all, the amount rule, exact rules, the full engine, LR-raw, LR-raw+BD, and LR-all on PR-AUC, recall@1%/5% FPR, and precision/recall/FPR with bootstrap intervals. Read the confidence intervals before ranking rows.', action: async () => { await refreshFull(); switchTab('evidence'); }},
   {caption: '<b>Wrap-up.</b> The model is deliberately transparent: proxy signals are documented, Bloom/DGIM are approximate, and labels are authored for teaching. Use the Evidence tab and CSV export when writing the report.', action: async () => switchTab('evidence')},
 ];
 

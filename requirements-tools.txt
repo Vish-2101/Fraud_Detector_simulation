@@ -1,3 +1,3 @@
 # Optional tooling only. The demo server (server.py) is standard-library only.
-# scikit-learn is used by tools/train_baseline.py to retrain the baseline.
+# scikit-learn is used by tools/train_baseline.py and tools/train_ladder.py.
 scikit-learn>=1.3

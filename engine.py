@@ -19,6 +19,7 @@ from pathlib import Path
 from algorithms.bloom_filter import BloomFilter, RotatingBloomFilter
 from algorithms.dgim import DGIM
 import baseline as baseline_module
+from datasets import fixture_sha256
 from evaluation import evaluation_report
 
 SCENARIOS_PATH = Path(__file__).parent / 'scenarios.json'
@@ -99,6 +100,11 @@ class Detector:
         self.block_threshold = 65
         self.risk_cutoffs = {'elevated': 35, 'highest': 65}
         self.baseline_model = baseline_module.load_model()
+        self.ladder_models = baseline_module.load_ladder_models()
+        self.ladder_fixture_sha256 = fixture_sha256('synthetic')
+        self.ladder_status = baseline_module.ladder_status(
+            self.ladder_models, self.ladder_fixture_sha256)
+        self._evaluation_cache = {}
         self.apriori_max_events = self.APRIORI_MAX_EVENTS
         self.dataset = {'name': 'synthetic', 'source': 'synthetic', 'window_seconds': self.window_seconds}
         self.reset()
@@ -122,6 +128,7 @@ class Detector:
         self.rng = random.Random(42)
         self.run_id = 0
         self._scenario_cache = None
+        self._evaluation_cache = {}
         # Incremental counters keep light replay state O(1) per event.
         self.action_counts = Counter()
         self._conf = Counter()
@@ -321,9 +328,18 @@ class Detector:
                      'window': self.dgim_window, 'threshold': self.DGIM_THRESHOLD, 'burst': dgim_burst,
                      'buckets': dev_stream.bucket_summary()[-8:]}
 
+        # Record every feature vector here, once. Training and the Evidence
+        # ladder read these stored values instead of re-deriving them later.
+        model_features = {
+            'raw': baseline_module.extract_raw(e),
+            'raw_bd': baseline_module.extract_raw_bd(e),
+            'all': baseline_module.extract_features(e),
+        }
+        e['model_features'] = model_features
+
         # ---- Learned baseline: third shadow view (labels never read) ----
         if self.baseline_model:
-            vector = baseline_module.extract_features(e)
+            vector = model_features['all']
             probability = baseline_module.probability(self.baseline_model, vector)
             learned = round(probability * 100, 4)
             e['baseline'] = {'score': learned, 'probability': round(probability, 6),
@@ -331,6 +347,16 @@ class Detector:
                              'features': {k: round(v, 4) for k, v in vector.items()}}
         else:
             e['baseline'] = None
+
+        # ---- Evidence ladder: learned views remain shadows ----
+        ladder = {}
+        for name, model in self.ladder_models.items():
+            if not model:
+                continue
+            vector = model_features[name]
+            probability = baseline_module.probability(model, vector)
+            ladder[name] = round(probability * 100, 4)
+        e['ladder'] = ladder or None
         e['latency_ms'] = round((time.perf_counter() - started) * 1000, 3)
 
         # ---- Bloom: insert AFTER query, high-risk identifiers only ----
@@ -720,6 +746,20 @@ class Detector:
                     false_positive_rate=ratio(cm['fp'], cm['fp'] + cm['tn']),
                     labeled=sum(cm.values()))
 
+    def evaluation(self, bootstrap=False):
+        """Return the Evidence report, cached until events/thresholds change."""
+        last = self.events[-1] if self.events else {}
+        key = (len(self.events), self.review_threshold, self.block_threshold,
+               bool(bootstrap), last.get('id'), last.get('time'))
+        cached = self._evaluation_cache.get(bool(bootstrap))
+        if cached and cached[0] == key:
+            return cached[1]
+        report = evaluation_report(self.events, self.review_threshold,
+                                   self.block_threshold, bootstrap=bootstrap)
+        report['ladder_models'] = self.ladder_status
+        self._evaluation_cache[bool(bootstrap)] = (key, report)
+        return report
+
     def state(self, dgim_entity=None, dgim_entity_kind=None, light=False):
         counts = self.action_counts
         series = self.series_counts
@@ -743,6 +783,7 @@ class Detector:
             dataset=self.dataset,
             baseline_available=bool(self.baseline_model),
             baseline_training=self.baseline_model.get('training') if self.baseline_model else None,
+            ladder_status=self.ladder_status,
             average_latency_ms=round(sum(e['latency_ms'] for e in self.events) / max(1, len(self.events)), 3),
         )
         if light:
@@ -762,7 +803,7 @@ class Detector:
             apriori_current=self.apriori_class_comparison(min_support=self.apriori_support),
             time_split=self.apriori_time_split(),
             shadow=self.shadow_summary(),
-            evaluation=evaluation_report(self.events, self.review_threshold, self.block_threshold),
+            evaluation=self.evaluation(),
         )
         return result
 

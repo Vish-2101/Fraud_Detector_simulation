@@ -190,6 +190,22 @@ td small{display:block;color:var(--muted);font-size:10px}
 .compare-table td:first-child{color:var(--muted);font-size:12px}
 .compare-table td:not(:first-child),.compare-table th:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
 .compare-table td:not(:first-child){font-weight:600}
+.ladder-table{min-width:980px}
+.ladder-table td:first-child{color:var(--ink);font-size:11px;text-align:left;min-width:220px}
+.ladder-table td:first-child b{display:block;line-height:1.35}
+.ladder-table .ci{display:block;color:var(--muted);font-size:9px;font-weight:500;margin-top:2px;white-space:nowrap}
+.ladder-table .muted-col{opacity:.42}
+.ladder-table .reference-row{background:var(--bg)}
+.ladder-guide{margin:0;padding-left:18px;line-height:1.75}
+.ladder-guide b{color:var(--ink)}
+.chart-legend{display:flex;gap:14px;flex-wrap:wrap;margin:2px 0 8px;font-size:10px;color:var(--muted)}
+.chart-legend span{display:inline-flex;align-items:center;gap:5px}
+.chart-legend i{display:inline-block;width:14px;height:3px;border-radius:2px}
+.model-warning{margin:0 0 14px;padding:11px 14px;border-left:4px solid var(--red);border-radius:8px;background:var(--red-soft, #fdecef);color:var(--red);font-weight:700}
+.model-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.model-card{background:var(--bg);border-radius:9px;padding:11px 12px;font-size:11px}
+.model-card>b{color:var(--purple);font-size:12px}
+.model-card .hint{margin:5px 0 0;line-height:1.5}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .split-grid>.card{height:fit-content}
 .entity-card{margin-bottom:14px}
@@ -389,7 +405,7 @@ footer span{letter-spacing:0;text-transform:none}
 
 @media(max-width:1200px){
   .sidebar{width:190px}.brand{font-size:23px}main{margin-left:190px}
-  .tab-panel{padding:20px 18px}.monitor-grid,.stream-grid,.bottom-grid,.split-grid{grid-template-columns:1fr}
+  .tab-panel{padding:20px 18px}.monitor-grid,.stream-grid,.bottom-grid,.split-grid,.model-cards{grid-template-columns:1fr}
   .stats{grid-template-columns:1fr 1fr}
 }
 @media(max-width:800px){

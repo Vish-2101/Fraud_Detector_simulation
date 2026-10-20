@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "name": "raw",
+  "feature_set": "raw",
+  "features": [
+    "amount",
+    "amount_log",
+    "amount_ge_1000",
+    "disposable",
+    "forwarding_email",
+    "country_mismatch",
+    "failed",
+    "type_payment",
+    "type_signup",
+    "type_trial",
+    "type_usage",
+    "type_cancel",
+    "device_accounts",
+    "card_attempts",
+    "device_trials",
+    "ip_accounts"
+  ],
+  "weights": [
+    -0.9664816146859561,
+    -0.9609145559992288,
+    0.023579387423045623,
+    2.09537868259276,
+    0.605435874683648,
+    0.07575802320883246,
+    1.0559909617160923,
+    0.41632986373819764,
+    -0.31071926261212646,
+    -0.5111799334487388,
+    0.34694597104852526,
+    -0.23691586118989288,
+    0.5522681038242014,
+    0.8099629435063871,
+    2.0105610272392496,
+    -0.1720605222038934
+  ],
+  "intercept": -1.933607913994551,
+  "solver": "sklearn.linear_model.LogisticRegression",
+  "iterations": 34,
+  "mean": [
+    47.32136842105265,
+    2.6291233026086376,
+    0.005847953216374269,
+    0.05906432748538012,
+    0.006432748538011696,
+    0.04327485380116959,
+    0.050292397660818715,
+    0.7771929824561403,
+    0.1111111111111111,
+    0.06140350877192982,
+    0.04152046783625731,
+    0.008771929824561403,
+    1.0666666666666667,
+    0.8298245614035088,
+    0.1216374269005848,
+    1.1456140350877193
+  ],
+  "scale": [
+    164.47197591434355,
+    1.6323303839291943,
+    0.07624798134739837,
+    0.23574505870554574,
+    0.07994603357427084,
+    0.20347516022762227,
+    0.21854764331454957,
+    0.4161298480968101,
+    0.31426968052735615,
+    0.2400689856737528,
+    0.1994906478683017,
+    0.0932468930941629,
+    0.3440386215229524,
+    0.6219564243439385,
+    0.4165434310420172,
+    0.7756310787541366
+  ],
+  "C": 1.0,
+  "fixture_sha256": "bd9bcbe3c7027a499c6764302c9ef8ab269ab6a30001b14aae273f980d8af17c",
+  "training": {
+    "dataset": "synthetic",
+    "window_seconds": 60,
+    "train_events": 1710,
+    "train_positives": 233,
+    "test_events": 733,
+    "test_positives": 171,
+    "validation_events": 342,
+    "validation_positives": 59,
+    "fit_events": 1368,
+    "events_replayed": 2519,
+    "time_range": {
+      "start_ts": 1203.224,
+      "end_ts": 22245.643
+    },
+    "temporal_split": "first 70% by event time for training; last 30% held out",
+    "validation_split": "last 20% of the training window, by event time",
+    "label_policy": "labels only build y; every feature is label-free",
+    "validation_average_precision": 0.9714
+  },
+  "top_weights": [
+    {
+      "feature": "disposable",
+      "weight": 2.0954
+    },
+    {
+      "feature": "device_trials",
+      "weight": 2.0106
+    },
+    {
+      "feature": "failed",
+      "weight": 1.056
+    },
+    {
+      "feature": "amount",
+      "weight": -0.9665
+    },
+    {
+      "feature": "amount_log",
+      "weight": -0.9609
+    }
+  ],
+  "score_mapping": "score = round(100 * sigmoid(z), 4); not a calibrated probability"
+}

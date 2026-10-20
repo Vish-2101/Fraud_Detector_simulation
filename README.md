@@ -1,6 +1,6 @@
 # Radar Lab
 
-A local, dependency-free simulation of **real-time payment fraud and account / free-trial abuse detection**, inspired by the business problem addressed by Stripe Radar. This is an independent educational prototype, not Stripe software. The demo uses one committed **synthetic** event log and transparent rules plus the syllabus algorithms (Bloom filter, DGIM, Apriori) and an optional learned baseline. No API keys, internet, external datasets, or database are needed.
+A local, dependency-free simulation of **real-time payment fraud and account / free-trial abuse detection**, inspired by the business problem addressed by Stripe Radar. This is an independent educational prototype, not Stripe software. The demo uses one committed **synthetic** event log and transparent rules plus the syllabus algorithms (Bloom filter, DGIM, Apriori) and optional learned baselines. No API keys, internet, external datasets, or database are needed.
 
 ## Quick start
 
@@ -26,15 +26,19 @@ packages.
 
 | Name | File | Content |
 |---|---|---|
-| `synthetic` | `fixtures/synthetic_events.jsonl` | 500 authored events, ~12% abuse, authored labels |
+| `synthetic` | `fixtures/synthetic_events.jsonl` | 2,519 authored events over 8.5 hours, 16% abuse, 3% unknown |
 
-This is the **only** registered dataset. It contains everyday payments, campus signups, travelers, card-testing bursts, repeated trial cycles, low-and-slow reuse, and forwarding-email abuse. Labels (`abuse`, `legitimate`, `unknown`) are carried only for temporal evaluation; they never enter scoring, Bloom, DGIM, or Apriori baskets.
+This is the **only** registered dataset. It interleaves 16 scenario families across the timeline: everyday payments, campus signups, travelers, free forwarding, large purchases, card-testing bursts, repeated trials, multi-account abuse, stealth abuse, low-and-slow device/card reuse, mixed streams, limited-memory forgetting, recidivist returns, DGIM negatives, and Bloom collision controls. `fixtures/synthetic_manifest.json` records scenario instances, event ranges, entities, expected algorithm contributions, held-out coverage, and the deliberate collision positions.
 
-Rebuild the deterministic fixture with:
+Labels (`abuse`, `legitimate`, `unknown`) are carried only for temporal evaluation; they never enter scoring, Bloom, DGIM, or Apriori baskets.
+
+Rebuild both deterministic files with:
 
 ```sh
 python tools/make_fixtures.py
 ```
+
+The generator uses a fixed seed and emits the same bytes on every run. `tests/test_synthetic_fixture.py` replays the fixture and checks the manifest, temporal coverage, algorithm attribution, ablation behavior, collision controls, Apriori combinations, label isolation, and byte-identical regeneration.
 
 ## What is in the box
 
@@ -43,15 +47,17 @@ python tools/make_fixtures.py
 | `engine.py` | Event-time detector: exact window, rules, Bloom/DGIM integration, Apriori, baseline shadow, evidence metrics |
 | `algorithms/bloom_filter.py` | Static and rotating Bloom filters, `for_capacity` sizing, measured FPP, false-positive finder |
 | `algorithms/dgim.py` | Classical DGIM buckets, invariant checks, long-stream scale demo |
-| `baseline.py` | Label-free feature extraction and pure-Python logistic-regression scoring |
-| `models/baseline.json` | Baseline trained on the synthetic fixture; 13 label-free features |
-| `evaluation.py` | Temporal split, confusion, precision/recall/FPR, PR curve and average precision, recall at FPR, per-rule ablation |
+| `baseline.py` | Label-free feature sets (`raw`, `raw+BD`, `all`) and pure-Python logistic-regression scoring |
+| `models/baseline.json` | Original baseline trained on the synthetic fixture; 13 label-free features |
+| `models/ladder_*.json` | Three Evidence-ladder models with scaler, metadata, and fixture hash |
+| `evaluation.py` | Temporal split, ladder rows, paired bootstrap intervals, confusion, PR curve/AP, recall at FPR, per-rule ablation |
 | `datasets.py` | One-entry catalogue and synthetic JSONL loader |
 | `server.py` | Loopback HTTP API plus static dashboard |
 | `static/` | Demo-first dashboard: Live, Bloom, DGIM, Apriori, Evidence tabs; large-type layout and dark mode |
 | `scenarios.json` | Parameters for the in-memory one-click scenarios |
-| `tools/` | Fixture generation and optional baseline retraining |
-| `tests/` | Engine/data tests plus Python wrappers for the Node UI-helper tests (`apriori_view`, `dgim_view`) |
+| `tools/` | Fixture generation plus optional baseline and Evidence-ladder retraining |
+| `tests/` | Engine/data/Evidence tests plus Python wrappers for the Node UI-helper tests |
+| `docs/EVIDENCE_LADDER.md` | Ladder definitions, results, confidence intervals, and presenting script |
 
 ## Live tab
 
@@ -107,6 +113,8 @@ The learned baseline is a logistic-regression model over 13 **label-free** featu
 
 It is deliberately a **shadow comparator**, not the production decision maker. Every event keeps its rules-based action, while the baseline records its own 0–100 score and action alongside it using the same review/block thresholds. Comparing the two answers the questions the report needs: does a learned model add ranking value over transparent rules, and how much do the Bloom/DGIM signals change decisions? The Bloom/DGIM and learned-baseline views are evaluated on the same temporal holdout with PR-AUC, recall at 1%/5% FPR, precision/recall/FPR, confusion counts and per-rule ablation. Labels are used only to fit the baseline and to score the held-out evaluation; they never enter features, scoring, Bloom, DGIM or Apriori baskets.
 
+The Evidence ladder extends this into a controlled comparison. `baseline.py` defines three label-free feature sets — `raw`, `raw+BD`, and `all` — and `tools/train_ladder.py` exports one model for each. The raw set excludes the rule score, Bloom, DGIM, and reason flags, so LR-raw is an independent learned view. LR-all is explicitly a reference because it consumes the engine's own outputs. See [`docs/EVIDENCE_LADDER.md`](docs/EVIDENCE_LADDER.md).
+
 ### How the score is determined
 
 1. Start from 0 and add every row triggered in the rule table above. Counts use the current event-time window and include the current event. The exact-rules component is capped at 100.
@@ -147,32 +155,43 @@ It is deliberately a **shadow comparator**, not the production decision maker. E
 - Level-wise frequent-itemset mining over fired-signal baskets (Bloom/DGIM markers excluded), subset pruning, ≤3 items.
 - Patterns are shown as sentences with support, confidence, lift and a Strong / Moderate / No real link badge; selecting one opens its matching events with highlighted signal chips. An optional level stepper shows candidates, frequent sets and pruning.
 - **Time-split check**: mine on the first half, test confidence on the second, and label each rule Holds up / Does not hold up / Not enough data.
+- On the 2,519-event fixture, support is measured over all replayed events, so the Balanced 12% floor needs about 303 co-occurrences and admits no itemset. Lower the support to about 1% (roughly 26 events) to surface the seeded combinations `card_velocity + failed_payment + country_mismatch` and `device_reuse + repeat_trial + temporary_email`; `failed_payment` and `temporary_email` also appear individually.
 - Optional **offline label-as-item mode** adds `label:abuse/legitimate` for evaluation-only `signal → label` rules. Never used for scoring, and label rules are hidden from the normal pattern and time-split lists.
 - Guided demo script: [`docs/APRIORI_TAB_WALKTHROUGH.md`](docs/APRIORI_TAB_WALKTHROUGH.md).
 
 ## Evidence tab
 
 - **Temporal 70/30 split** by event time: first 70% for tuning/training, last 30% held out. No random shuffling.
-- **Side-by-side comparison** of Bloom/DGIM and the learned baseline: true/false positives and negatives, precision, recall, false-positive rate, PR-AUC, recall @ 1%/5% FPR, and labeled/positive test counts.
-- Bloom/DGIM and learned-baseline **PR curves** shown next to each other.
-- **Baseline provenance**: the app loads `models/baseline.json`, trained offline by `tools/train_baseline.py` on the first 70% of the synthetic fixture (345 training events, 50 positives; 149 held out).
+- **Seven-row comparison ladder** on the same holdout: allow-all, amount ≥ $1,000, exact rules, full engine, LR-raw, LR-raw+BD, and LR-all (reference only).
+- Columns show whether each row is trained, whether it uses the rule score, whether it uses Bloom/DGIM, PR-AUC with a 95% bootstrap interval, recall @ 1%/5% FPR, and precision/recall/FPR at the review threshold.
+- **Paired bootstrap intervals** (500 resamples, fixed seed) run on demand and are cached; they do not run on every live event.
+- **Overlaid PR curves** for rows 3–7 plus per-model cards with `C`, training counts, time range, and top weights.
+- **Stale-model warning**: if the fixture SHA-256 no longer matches a model, the tab says “model is stale, retrain”.
 - **Per-rule ablation**: decisions that flip when each rule is removed (zeros reported honestly).
-- Explainability note: labels are authored for teaching; the fixture is small, so results demonstrate mechanics rather than real-world fraud rates.
+- Full definitions, results, caveats, and a presenting script: [`docs/EVIDENCE_LADDER.md`](docs/EVIDENCE_LADDER.md).
+- Explainability note: labels are authored for teaching; the fixture is compact, so results demonstrate mechanics rather than real-world fraud rates.
 
-## Optional baseline retraining
+## Optional model retraining
 
-The committed model is already trained on the synthetic fixture. To retrain:
+The committed models are already trained on the synthetic fixture. To retrain the original baseline:
 
 ```sh
 pip install -r requirements-tools.txt
 python tools/train_baseline.py
 ```
 
-`tools/train_baseline.py` uses scikit-learn when available and falls back to deterministic gradient descent. The server only reads the exported JSON, so the runtime stays standard-library-only.
+To retrain all three Evidence-ladder models:
+
+```sh
+pip install -r requirements-tools.txt
+python tools/train_ladder.py
+```
+
+Both tools use scikit-learn when available and fall back to deterministic gradient descent. The server only reads exported JSON, so the runtime stays standard-library-only.
 
 ## API (loopback only)
 
-`GET /api/state` (`?light=1`, `?entity=`, `?entity_kind=`, `?min_support=`, `?min_confidence=`) · `GET /api/datasets` · `GET /api/entity` · `GET /api/dgim_demo` · `GET /api/export`
+`GET /api/state` (`?light=1`, `?entity=`, `?entity_kind=`, `?min_support=`, `?min_confidence=`) · `GET /api/evidence` (`?bootstrap=0|1`) · `GET /api/datasets` · `GET /api/entity` · `GET /api/dgim_demo` · `GET /api/export`
 `POST /api/event` · `/api/scenario` · `/api/scenario_run` · `/api/replay` · `/api/reset` · `/api/advance` · `/api/thresholds` · `/api/config` · `/api/apriori` · `/api/inspect` · `/api/bloom/config` · `/api/bloom/find_false_positive`
 
 Cross-origin POSTs are rejected; responses are JSON (`/api/export` returns CSV).

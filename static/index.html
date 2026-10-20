@@ -375,14 +375,18 @@
   <div class="heading"><div><div class="eyebrow">TEMPORAL EVALUATION · HONEST RESULTS</div><h1>Evidence, not vibes.</h1>
     <p>First 70% of labeled events by time for tuning/training; last 30% held out. Labels never enter scoring.</p></div>
     <a href="/api/export" download="radar-lab-events.csv" class="button secondary">↓ Export CSV</a></div>
-  <div class="demo-bar"><div><span class="demo-label">COMPARISON</span><strong>Bloom/DGIM vs learned baseline</strong></div><div class="hint" id="evidence-split"></div></div>
-  <div class="card"><div class="card-title"><h2>All metrics side by side</h2><span class="chip" id="evidence-threshold">review ≥ —</span></div>
-    <div class="table-scroll compare-scroll"><table class="compare-table"><thead><tr><th>METRIC</th><th>BLOOM/DGIM</th><th>LEARNED BASELINE</th></tr></thead><tbody id="evidence-compare"></tbody></table></div>
-    <p class="hint" id="baseline-source">Baseline source: models/baseline.json, trained offline by tools/train_baseline.py.</p></div>
-  <div class="monitor-grid">
-    <div class="card"><div class="card-title"><h2>Bloom/DGIM PR curve</h2><span class="chip" id="prauc-full">PR-AUC —</span></div><div id="pr-chart-full" class="svg-wrap"></div></div>
-    <div class="card"><div class="card-title"><h2>Learned baseline PR curve</h2><span class="chip" id="prauc-baseline">PR-AUC —</span></div><div id="pr-chart-baseline" class="svg-wrap"></div></div>
-  </div>
+  <div id="ladder-stale" class="model-warning hidden" role="status"></div>
+  <div class="demo-bar"><div><span class="demo-label">EVIDENCE LADDER</span><strong>Same split, seven honest rows</strong></div><div class="hint" id="evidence-split"></div></div>
+  <div class="card"><div class="card-title"><h2>Comparison ladder</h2><span class="chip" id="evidence-threshold">review ≥ —</span></div>
+    <p class="hint" id="ladder-abuse-count">Replay the synthetic demo to compute the held-out comparison.</p>
+    <div class="table-scroll"><table class="compare-table ladder-table"><thead><tr><th>ROW</th><th>TRAINED?</th><th>USES RULE SCORE?</th><th>USES BLOOM/DGIM?</th><th>PR-AUC (95% CI)</th><th id="recall-1pct-header">RECALL @ 1% FPR</th><th>RECALL @ 5% FPR (95% CI)</th><th>PRECISION / RECALL / FPR @ REVIEW</th></tr></thead><tbody id="evidence-ladder"><tr><td colspan="8" class="hint">Playback state only. Replay to compute the ladder.</td></tr></tbody></table></div>
+    <p class="hint" id="ladder-few-warning"></p>
+    <p class="hint" id="baseline-source">Models: models/ladder_*.json, trained offline by tools/train_ladder.py.</p></div>
+  <div class="card"><div class="card-title"><h2>How to read the ladder</h2><span class="chip">compare, don't rank blindly</span></div>
+    <ul class="ladder-guide"><li><b>Row 5 vs row 4:</b> does a learned model on raw signals match the hand-built engine?</li><li><b>Row 6 vs row 5:</b> what Bloom and DGIM add to a learned model.</li><li><b>Row 7</b> uses the engine's own outputs, so it is a reference, not an independent test.</li></ul></div>
+  <div class="card"><div class="card-title"><h2>Precision-recall, learned and engine rows</h2><span class="chip">rows 3–7 overlaid</span></div><div id="ladder-pr-chart" class="svg-wrap"></div></div>
+  <div class="card"><div class="card-title"><h2>Model cards</h2><span class="chip">learned rows only</span></div><div id="ladder-model-cards" class="model-cards"></div></div>
+  <div class="card"><div class="card-title"><h2>Caution</h2></div><p class="hint">Labels and scenarios are authored. Differences within the confidence intervals are not meaningful. This shows mechanics, not real-world performance.</p></div>
   <div class="card"><div class="card-title"><h2>Per-rule ablation</h2><span class="chip">flip counts when removed</span></div><div id="ablation"></div><p class="hint">A flip means removing that rule changes review/block to another action on the temporal test split. Counts of 0 are honest: many rules overlap or never fire on a dataset.</p></div>
   <div class="card"><div class="card-title"><h2>What the numbers mean</h2></div><ul><li>Positive = review or block under the current review threshold.</li><li>PR-AUC is average precision over the held-out test split.</li><li>Recall@FPR is the best recall at or below that false-positive rate.</li></ul></div>
 </section>
