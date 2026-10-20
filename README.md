@@ -73,7 +73,7 @@ synthetic event -> validate -> advance event-time clock / expire exact window
   -> Bloom insert if high-risk -> store event -> evaluation state
 ```
 
-The exact window is 60 seconds by default. Bloom is insert-only; DGIM is count-based over the last N stream elements. An explicit **+ window** control advances past the exact window to show that Bloom persists and DGIM does not expire by seconds.
+The exact window is 60 seconds by default. Bloom is insert-only; DGIM is count-based over the last N stream elements, so Bloom persists after exact-window expiry while DGIM does not expire by seconds.
 
 ## Scoring policy
 

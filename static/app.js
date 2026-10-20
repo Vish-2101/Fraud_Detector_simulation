@@ -643,14 +643,6 @@ function wire() {
   $('pause').onclick = () => { paused = !paused; updateControls(); $('run-status').textContent = paused ? 'Paused' : 'Replaying'; };
   $('reset').onclick = resetSession;
   $('run-scenario').onclick = () => runScenario($('scenario').value, false);
-  $('advance').onclick = async () => {
-    try {
-      const seconds = Number(state?.window_seconds || 60) + 1;
-      const s = await api('advance', {seconds});
-      render(s);
-      $('run-status').textContent = `Advanced ${seconds}s · exact window expired (Bloom persists; DGIM is count-based)`;
-    } catch (error) { toast(error.message); }
-  };
   $('filter').onchange = renderEvents;
   $('shadow-view').onchange = () => { renderEvents(); renderInspection(); };
   $('events').addEventListener('click', ev => {
