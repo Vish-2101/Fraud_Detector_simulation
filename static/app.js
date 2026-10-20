@@ -885,6 +885,8 @@ function renderEvidence() {
   }
   const rows = ev.ladder || [];
   const diag = ev.ladder_diagnostics || {};
+  const testN = ev.split?.test_n || 0;
+  const prevalence = testN && diag.test_positives != null ? diag.test_positives / testN : null;
   const fewAbuse = Boolean(diag.few_abuse_events);
   $('recall-1pct-header').classList.toggle('muted-col', fewAbuse);
   $('evidence-split').textContent = `Test split: last ${ev.split.test_n} of ${ev.split.train_n + ev.split.test_n} labeled events · ${ev.method}`;
@@ -909,7 +911,7 @@ function renderEvidence() {
       <td>${cell(row, `${pct(row.precision)} / ${pct(row.recall)} / ${pct(row.false_positive_rate)}`)}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" class="hint">No ladder rows available.</td></tr>';
-  $('ladder-pr-chart').innerHTML = svgLadderPrChart(rows);
+  $('ladder-pr-chart').innerHTML = svgLadderPrChart(rows, prevalence);
   renderLadderModelCards(status);
   const ablation = ev.ablation || [];
   const maxFlip = Math.max(1, ...ablation.map(a => a.flips));
@@ -937,7 +939,7 @@ function baselineSource() {
   return `Models: the running app loads models/ladder_*.json (${count}/3 available), trained offline by tools/train_ladder.py on the synthetic fixture with a strict event-time split.`;
 }
 
-function svgLadderPrChart(rows) {
+function svgLadderPrChart(rows, prevalence) {
   const wanted = [
     ['exact_rules', 'Exact rules', '#6554d9'],
     ['full_engine', 'Full engine', '#3b7dd8'],
@@ -947,31 +949,49 @@ function svgLadderPrChart(rows) {
   ];
   const series = wanted.map(([id, label, color]) => {
     const row = rows.find(item => item.id === id);
-    return {label, color, points: row?.available ? (row.pr_curve || []) : []};
+    return {label, color, row, points: row?.available ? (row.pr_curve || []) : []};
   }).filter(item => item.points.length);
   if (!series.length) return '<p class="hint">No positive test events, so the PR curves are undefined.</p>';
   const w = 660, h = 240, pad = 38;
   const x = r => pad + r * (w - pad * 1.3);
   const y = p => h - pad - p * (h - pad * 1.5);
+  const axisY = h - pad;
   const grid = [0, 0.25, 0.5, 0.75, 1].map(f =>
     `<line x1="${pad}" y1="${y(f)}" x2="${w - 16}" y2="${y(f)}" stroke="var(--line)"/>` +
     `<text x="${pad - 6}" y="${y(f) + 3}" font-size="9" fill="var(--muted)" text-anchor="end">${f}</text>`).join('');
+  const xTicks = [0, 0.25, 0.5, 0.75, 1].map(f =>
+    `<line x1="${x(f)}" y1="${axisY}" x2="${x(f)}" y2="${axisY + 4}" stroke="var(--line)"/>` +
+    `<text x="${x(f)}" y="${axisY + 14}" font-size="9" fill="var(--muted)" text-anchor="middle">${f}</text>`).join('');
+  const noSkill = (typeof prevalence === 'number' && isFinite(prevalence))
+    ? `<line x1="${pad}" y1="${y(prevalence).toFixed(1)}" x2="${w - 16}" y2="${y(prevalence).toFixed(1)}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 4"/>` +
+      `<text x="${pad + 3}" y="${(y(prevalence) - 4).toFixed(1)}" font-size="9" fill="var(--muted)" text-anchor="start">no-skill</text>`
+    : '';
   const paths = series.map(item => {
     const d = item.points.map((point, index) =>
       `${index ? 'L' : 'M'}${x(point.recall).toFixed(1)},${y(point.precision).toFixed(1)}`).join(' ');
     return `<path d="${d}" fill="none" stroke="${item.color}" stroke-width="2.1"/>`;
   }).join('');
+  const markers = series.map(item => {
+    const r = item.row?.recall, p = item.row?.precision;
+    if (typeof r !== 'number' || typeof p !== 'number') return '';
+    return `<circle cx="${x(r).toFixed(1)}" cy="${y(p).toFixed(1)}" r="3.2" fill="var(--panel)" stroke="${item.color}" stroke-width="1.8">` +
+      `<title>${esc(item.label)} at review ≥ 35: precision ${num(p, 3)}, recall ${num(r, 3)}</title></circle>`;
+  }).join('');
   const legend = series.map(item =>
     `<span><i style="background:${item.color}"></i>${esc(item.label)}</span>`).join('');
-  return `<div class="chart-legend">${legend}</div>
+  return `<div class="chart-legend">${legend}<span><i style="background:var(--muted)"></i>no-skill = prevalence</span><span><i class="ring" style="background:var(--panel);border-color:var(--muted)"></i>marker = review ≥ 35</span></div>
     <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Evidence ladder precision recall curves">
       ${grid}
-      <line x1="${pad}" y1="${h - pad}" x2="${w - 16}" y2="${h - pad}" stroke="var(--line)"/>
-      <line x1="${pad}" y1="${pad / 2}" x2="${pad}" y2="${h - pad}" stroke="var(--line)"/>
+      <line x1="${pad}" y1="${axisY}" x2="${w - 16}" y2="${axisY}" stroke="var(--line)"/>
+      <line x1="${pad}" y1="${pad / 2}" x2="${pad}" y2="${axisY}" stroke="var(--line)"/>
+      ${xTicks}
       <text x="${w / 2}" y="${h - 8}" font-size="10" fill="var(--muted)" text-anchor="middle">recall</text>
       <text x="8" y="16" font-size="10" fill="var(--muted)">precision</text>
+      ${noSkill}
       ${paths}
-    </svg>`;
+      ${markers}
+    </svg>
+    <p class="hint">Higher and further right is better; the area under a curve is its PR-AUC.</p>`;
 }
 
 function svgLineChart(samples) {
