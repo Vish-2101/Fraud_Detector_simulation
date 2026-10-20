@@ -549,6 +549,7 @@ class Detector:
             dgim=self.dgim_state(dgim_entity),
             dataset=self.dataset,
             baseline_available=bool(self.baseline_model),
+            baseline_training=self.baseline_model.get('training') if self.baseline_model else None,
             average_latency_ms=round(sum(e['latency_ms'] for e in self.events) / max(1, len(self.events)), 3),
         )
         if light:

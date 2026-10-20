@@ -173,6 +173,10 @@ td small{display:block;color:var(--muted);font-size:10px}
 .level{background:var(--bg);border-radius:8px;padding:8px 10px;font-size:10px;color:var(--muted);flex:1;min-width:100px}
 .level b{display:block;font-size:14px;color:var(--ink)}
 .table-compact td,.table-compact th{padding:6px 7px}
+.compare-scroll{max-height:none}
+.compare-table td:first-child{color:var(--muted);font-size:12px}
+.compare-table td:not(:first-child),.compare-table th:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+.compare-table td:not(:first-child){font-weight:600}
 .advantages ul{font-size:12px;color:var(--muted)}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .split-grid>.card{height:fit-content}

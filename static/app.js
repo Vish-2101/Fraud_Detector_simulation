@@ -348,40 +348,57 @@ function renderAprioriBaskets() {
 }
 
 function renderEvidence() {
-  const ev = state.evaluation;
+  const ev = state?.evaluation;
+  $('baseline-source').textContent = baselineSource();
   if (!ev) {
-    $('confusion').innerHTML = '<p class="hint">Playback state only. Open this tab after replaying the synthetic demo to compute full evidence.</p>';
+    $('evidence-split').textContent = 'Replay the synthetic demo to compute the comparison.';
+    $('evidence-threshold').textContent = 'review ≥ —';
+    $('evidence-compare').innerHTML = '<tr><td colspan="3" class="hint">Playback state only. Open this tab after replaying the synthetic demo to compute full evidence.</td></tr>';
+    $('prauc-full').textContent = 'PR-AUC —';
+    $('prauc-baseline').textContent = 'PR-AUC —';
+    $('pr-chart-full').innerHTML = '';
+    $('pr-chart-baseline').innerHTML = '';
     return;
   }
-  const key = $('evidence-view-select').value;
-  const v = ev.views?.[key];
+  const full = ev.views?.full || {available: false};
+  const baseline = ev.views?.baseline || {available: false};
+  const value = (v, read, fmt = x => x) => {
+    if (!v.available) return '—';
+    const x = read(v);
+    return x === undefined || x === null ? '—' : fmt(x);
+  };
+  const count = (v, key) => v.available ? (v.confusion?.[key] ?? 0) : '—';
+  const recall = (v, key) => value(v, x => x[key]?.recall, pct);
+  const rows = [
+    ['True positives', count(full, 'tp'), count(baseline, 'tp')],
+    ['False positives', count(full, 'fp'), count(baseline, 'fp')],
+    ['False negatives', count(full, 'fn'), count(baseline, 'fn')],
+    ['True negatives', count(full, 'tn'), count(baseline, 'tn')],
+    ['Precision', value(full, v => v.precision, pct), value(baseline, v => v.precision, pct)],
+    ['Recall', value(full, v => v.recall, pct), value(baseline, v => v.recall, pct)],
+    ['False-positive rate', value(full, v => v.false_positive_rate, pct), value(baseline, v => v.false_positive_rate, pct)],
+    ['PR-AUC', value(full, v => v.pr_auc, x => num(x, 3)), value(baseline, v => v.pr_auc, x => num(x, 3))],
+    ['Recall @ 1% FPR', recall(full, 'recall_at_1pct_fpr'), recall(baseline, 'recall_at_1pct_fpr')],
+    ['Recall @ 5% FPR', recall(full, 'recall_at_5pct_fpr'), recall(baseline, 'recall_at_5pct_fpr')],
+    ['Labeled test events', value(full, v => v.labeled), value(baseline, v => v.labeled)],
+    ['Positive test events', value(full, v => v.positives), value(baseline, v => v.positives)],
+  ];
   $('evidence-split').textContent = `Test split: last ${ev.split.test_n} of ${ev.split.train_n + ev.split.test_n} labeled events · ${ev.method}`;
-  if (!v || !v.available) {
-    $('confusion').innerHTML = '<p class="hint">This view is not available (no baseline model or no labeled test events).</p>';
-    return;
-  }
-  const cm = v.confusion || {};
   $('evidence-threshold').textContent = `review ≥ ${ev.thresholds.review}`;
-  $('confusion').innerHTML = `
-    <div>True positives<b>${cm.tp ?? 0}</b>review/block & abuse</div>
-    <div>False positives<b>${cm.fp ?? 0}</b>review/block & legitimate</div>
-    <div>False negatives<b>${cm.fn ?? 0}</b>allow & abuse</div>
-    <div>True negatives<b>${cm.tn ?? 0}</b>allow & legitimate</div>`;
-  $('evidence-metrics').innerHTML = `
-    <div>Precision<b>${pct(v.precision)}</b></div>
-    <div>Recall<b>${pct(v.recall)}</b></div>
-    <div>FPR<b>${pct(v.false_positive_rate)}</b></div>
-    <div>PR-AUC<b>${num(v.pr_auc, 3)}</b></div>
-    <div>Labeled<b>${v.labeled ?? 0}</b></div>
-    <div>Positives<b>${v.positives ?? 0}</b></div>`;
-  $('evidence-prauc').textContent = `PR-AUC ${num(v.pr_auc, 3)}`;
-  $('recall-1').textContent = v.recall_at_1pct_fpr ? pct(v.recall_at_1pct_fpr.recall) : '—';
-  $('recall-5').textContent = v.recall_at_5pct_fpr ? pct(v.recall_at_5pct_fpr.recall) : '—';
-  $('test-n').textContent = v.labeled ?? 0;
-  $('pr-chart').innerHTML = svgPrChart(v.pr_curve || []);
+  $('evidence-compare').innerHTML = rows.map(([metric, f, b]) => `<tr><td>${metric}</td><td>${f}</td><td>${b}</td></tr>`).join('');
+  $('prauc-full').textContent = full.available ? `PR-AUC ${num(full.pr_auc, 3)}` : 'PR-AUC —';
+  $('prauc-baseline').textContent = baseline.available ? `PR-AUC ${num(baseline.pr_auc, 3)}` : 'PR-AUC —';
+  $('pr-chart-full').innerHTML = full.available ? svgPrChart(full.pr_curve || []) : '<p class="hint">Bloom/DGIM view unavailable.</p>';
+  $('pr-chart-baseline').innerHTML = baseline.available ? svgPrChart(baseline.pr_curve || []) : '<p class="hint">Learned baseline unavailable.</p>';
   const ablation = ev.ablation || [];
   const maxFlip = Math.max(1, ...ablation.map(a => a.flips));
   $('ablation').innerHTML = ablation.length ? ablation.map(a => `<div class="pattern"><div style="display:flex;justify-content:space-between;gap:10px"><span>${esc(a.rule)}</span><b style="margin:0">${a.flips} flip${a.flips === 1 ? '' : 's'} / ${a.events} events</b></div><div style="height:7px;background:var(--line);border-radius:5px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;width:${a.flips / maxFlip * 100}%;background:var(--red)"></i></div></div>`).join('') : '<p class="hint">No rule-ablation data on the test split.</p>';
+}
+
+function baselineSource() {
+  const t = state?.baseline_training;
+  if (!t) return 'Baseline source: the running app loads models/baseline.json.';
+  return `Baseline source: the running app loads models/baseline.json. That committed model was trained offline by tools/train_baseline.py on the ${t.dataset} fixture: ${t.train_events} training events (${t.train_positives} positives), ${t.test_events} held-out events, using a temporal split — ${t.temporal_split}.`;
 }
 
 function svgPrChart(points) {
@@ -601,7 +618,7 @@ const guidedSteps = [
   {caption: '<b>Step 4 — Bloom filter.</b> A fixed-size bit array answers “possibly seen before?”. Query before insert; first sightings are definitely absent. A false positive is possible, so the scoring rule requires corroboration. The rotating mode lets the filter forget.', action: async () => { await bloomRunDemo(); switchTab('bloom'); }},
   {caption: '<b>Step 5 — DGIM.</b> Estimate suspicious 1s in the last N stream elements with O(log²N) buckets. The worst-case stream shows the estimate tracking the exact count while bucket storage stays far below exact storage.', action: async () => { await dgimRunDemo('worst'); switchTab('dgim'); }},
   {caption: '<b>Step 6 — Apriori.</b> Mine co-occurring signals offline. Fixed 12% support hides fraud patterns at 3.5% prevalence, so use the auto-suggested support and compare all baskets with the fraud-only subset. Co-occurrence is not causation.', action: async () => { await aprioriRunDemo(); switchTab('apriori'); }},
-  {caption: '<b>Step 7 — Evidence.</b> Temporal split: first 70% by event time for tuning/training, last 30% held out. Compare exact rules, the learned baseline and rules+Bloom/DGIM on PR-AUC, recall@1%/5% FPR and per-rule ablations. Report inactive rules honestly.', action: async () => { await refreshFull(); switchTab('evidence'); }},
+  {caption: '<b>Step 7 — Evidence.</b> Temporal split: first 70% by event time for tuning/training, last 30% held out. Compare Bloom/DGIM and the learned baseline side by side on confusion counts, precision, recall, FPR, PR-AUC and recall@1%/5% FPR, plus per-rule ablations. Report inactive rules honestly.', action: async () => { await refreshFull(); switchTab('evidence'); }},
   {caption: '<b>Wrap-up.</b> The model is deliberately transparent: proxy signals are documented, Bloom/DGIM are approximate, and labels are authored for teaching. Use the Evidence tab and CSV export when writing the report.', action: async () => switchTab('evidence')},
 ];
 
@@ -754,9 +771,6 @@ function wire() {
     aprioriSelected = aprioriItemsets[Number(item.dataset.itemsetIndex)] || null;
     renderAprioriBaskets();
   });
-
-  // Evidence
-  $('evidence-view-select').onchange = renderEvidence;
 
   // Keyboard: guided demo Space/R/Esc.
   document.addEventListener('keydown', ev => {
