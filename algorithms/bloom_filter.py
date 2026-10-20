@@ -10,6 +10,21 @@ import hashlib
 import math
 
 
+def identifier_positions(key, size, num_hashes):
+    """Normalise one identifier and return its shared key plus k bit positions.
+
+    Inserts, scoring queries and UI checks all call this function, so they use
+    the same whitespace normalisation, BLAKE2b keys and filter parameters.
+    """
+    normalized = str(key).strip()
+    data = normalized.encode('utf-8')
+    out = []
+    for i in range(num_hashes):
+        h = hashlib.blake2b(data, digest_size=8, key=f'bloom-k{i}'.encode('utf-8'))
+        out.append(int.from_bytes(h.digest(), 'big') % size)
+    return normalized, out
+
+
 class BloomFilter:
     def __init__(self, size=512, num_hashes=3):
         if not isinstance(size, int) or size < 16:
@@ -40,7 +55,11 @@ class BloomFilter:
         self.insertions = 0
         self.queries = 0
         self.positives = 0
-        self._members = set()  # exact reference for demo/testing only, not part of the filter
+        # Demo-only ground truth: identifier -> first event metadata. This is
+        # never used for scoring and never reads labels.
+        self._inserted = {}
+        # Demo-only ground truth: bit position -> identifiers that set it.
+        self._bit_sources = {}
         self._absent_queries = 0
         self._false_positives = 0
 
@@ -48,31 +67,66 @@ class BloomFilter:
         # Keyed hashing: BLAKE2b `key=` parameter with a per-function domain
         # separation string. Each of the k hash functions uses a distinct key,
         # so positions are deterministic yet independent across functions.
-        data = str(key).encode('utf-8')
-        out = []
-        for i in range(self.num_hashes):
-            h = hashlib.blake2b(data, digest_size=8, key=f'bloom-k{i}'.encode('utf-8'))
-            out.append(int.from_bytes(h.digest(), 'big') % self.size)
-        return out
+        return identifier_positions(key, self.size, self.num_hashes)[1]
 
-    def add(self, key):
-        for p in self.positions(key):
+    def add(self, key, event_id=None, action=None, score=None):
+        key, pos = identifier_positions(key, self.size, self.num_hashes)
+        for p in pos:
             self.bits[p] = 1
+            sources = self._bit_sources.setdefault(p, [])
+            if key not in sources:
+                sources.append(key)
         self.insertions += 1
-        self._members.add(str(key))
+        record = self._inserted.get(key)
+        if record is None:
+            self._inserted[key] = {'event_id': event_id, 'action': action, 'score': score}
+        elif record.get('event_id') is None and event_id is not None:
+            record.update(event_id=event_id, action=action, score=score)
+
+    def _probe(self, key):
+        key, pos = identifier_positions(key, self.size, self.num_hashes)
+        hit = all(self.bits[p] for p in pos)
+        # A Bloom filter has no false negatives for retained insertions.
+        assert hit or key not in self._inserted, \
+            f'Bloom false negative for inserted identifier {key!r}'
+        return key, pos, hit
+
+    def _record_query(self, key, hit):
+        self.queries += 1
+        if hit:
+            self.positives += 1
+        if key not in self._inserted:
+            self._absent_queries += 1
+            if hit:
+                self._false_positives += 1
+
+    def _base_result(self, key, pos):
+        return {'key': key, 'positions': pos, 'inserted_event': None, 'bit_sources': []}
+
+    def classify(self, key, count_query=False):
+        """Return absent, true positive, or false positive with demo evidence."""
+        key, pos, hit = self._probe(key)
+        if count_query:
+            self._record_query(key, hit)
+        if not hit:
+            return {**self._base_result(key, pos),
+                    'result': 'definitely_absent', 'outcome': 'definitely_absent'}
+        record = self._inserted.get(key)
+        if record is not None:
+            return {**self._base_result(key, pos),
+                    'result': 'possibly_present', 'outcome': 'true_positive',
+                    'inserted_event': dict(record)}
+        return {**self._base_result(key, pos),
+                'result': 'possibly_present', 'outcome': 'false_positive',
+                'bit_sources': [{'position': p,
+                                 'identifiers': list(self._bit_sources.get(p, []))}
+                                for p in pos]}
 
     def check(self, key, count_query=True):
         """Return 'possibly_present' or 'definitely_absent'. Query increments stats."""
-        pos = self.positions(key)
-        hit = all(self.bits[p] for p in pos)
+        key, pos, hit = self._probe(key)
         if count_query:
-            self.queries += 1
-            if hit:
-                self.positives += 1
-            if str(key) not in self._members:
-                self._absent_queries += 1
-                if hit:
-                    self._false_positives += 1
+            self._record_query(key, hit)
         return 'possibly_present' if hit else 'definitely_absent'
 
     def contains_bits(self, key):
@@ -105,7 +159,7 @@ class BloomFilter:
         return round(min(1.0, max(0.0, p)), 4)
 
     def exact_members(self):
-        return set(self._members)
+        return set(self._inserted)
 
     def to_state(self, max_bits=4096):
         bits = self.bits[:max_bits]
@@ -172,8 +226,8 @@ class RotatingBloomFilter:
     def positions(self, key):
         return self.active.positions(key)
 
-    def add(self, key):
-        self.active.add(key)
+    def add(self, key, event_id=None, action=None, score=None):
+        self.active.add(key, event_id=event_id, action=action, score=score)
         self._since_rotate += 1
         if self._since_rotate >= self.rotate_every:
             self.rotate()
@@ -191,6 +245,12 @@ class RotatingBloomFilter:
         if self.previous is not None:
             return self.previous.check(key, count_query=count_query)
         return active
+
+    def classify(self, key, count_query=False):
+        result = self.active.classify(key, count_query=count_query)
+        if result['outcome'] != 'definitely_absent' or self.previous is None:
+            return result
+        return self.previous.classify(key, count_query=count_query)
 
     def theoretical_fpp(self, n=None):
         total = self.active.theoretical_fpp(n)

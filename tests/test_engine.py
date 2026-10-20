@@ -242,6 +242,11 @@ class DetectorTests(unittest.TestCase):
 
 
 class BloomFilterTests(unittest.TestCase):
+    def event(self, **changes):
+        e = dict(type='payment', account='a', device='d', ip='i', card='c', amount=10)
+        e.update(changes)
+        return e
+
     def test_empty_reports_absent(self):
         bf = BloomFilter(size=128, num_hashes=3)
         self.assertEqual(bf.check('anything'), 'definitely_absent')
@@ -292,6 +297,66 @@ class BloomFilterTests(unittest.TestCase):
         bf.add('seen')
         self.assertEqual(bf.check('seen'), 'possibly_present')
         self.assertNotIn('confirmed', bf.check('seen'))
+
+    def test_add_and_query_share_normalised_positions(self):
+        bf = BloomFilter(size=256, num_hashes=3)
+        bf.add('  padded-key  ', event_id='evt_00001', action='review', score=40)
+        info = bf.classify('padded-key', count_query=False)
+        self.assertEqual(info['outcome'], 'true_positive')
+        self.assertEqual(info['positions'], bf.positions(' padded-key '))
+
+    def test_replayed_insertions_have_no_false_negatives(self):
+        d = Detector()
+        d.replay(d.scenario('mixed'))
+        for bf in (d.bloom_device, d.bloom_card):
+            members = bf.exact_members()
+            self.assertTrue(members)
+            for key in members:
+                info = bf.classify(key, count_query=False)
+                self.assertEqual(info['outcome'], 'true_positive')
+                self.assertEqual(info['result'], 'possibly_present')
+                self.assertTrue(all(bf.bits[p] for p in info['positions']))
+
+    def test_tiny_filter_collision_is_false_positive_with_sources(self):
+        bf = BloomFilter(size=16, num_hashes=3)
+        info = None
+        for i in range(300):
+            bf.add(f'inserted-{i}', event_id=f'evt_{i:05}', action='review', score=40)
+            candidate = f'probe-{i}'
+            if bf.check(candidate, count_query=False) == 'possibly_present':
+                info = bf.classify(candidate, count_query=False)
+                break
+        self.assertIsNotNone(info, 'expected a forced collision in the tiny filter')
+        self.assertEqual(info['result'], 'possibly_present')
+        self.assertEqual(info['outcome'], 'false_positive')
+        self.assertEqual(len(info['bit_sources']), bf.num_hashes)
+        for bit in info['bit_sources']:
+            self.assertTrue(bit['identifiers'])
+            self.assertTrue(all(k in bf.exact_members() for k in bit['identifiers']))
+
+    def test_large_filter_never_inserted_is_absent(self):
+        bf = BloomFilter(size=4096, num_hashes=3)
+        bf.add('known')
+        info = bf.classify('never-inserted-identifier', count_query=False)
+        self.assertEqual(info['result'], 'definitely_absent')
+        self.assertEqual(info['outcome'], 'definitely_absent')
+
+    def test_query_does_not_mutate_filter_or_scoring(self):
+        first = self.event(device='query-dev', card='query-card', failed=True)
+        second = self.event(device='query-dev', card='query-card', account='b', failed=True)
+        control, tested = Detector(), Detector()
+        control.process(first)
+        tested.process(first)
+        before = tested.bloom_device.to_state()
+        inserted = next(iter(tested.bloom_device.exact_members()))
+        tested.bloom_device.classify(inserted, count_query=False)
+        tested.bloom_device.classify('never-inserted-identifier', count_query=False)
+        self.assertEqual(before, tested.bloom_device.to_state())
+        expected = control.process(second)
+        actual = tested.process(second)
+        self.assertEqual(actual['score'], expected['score'])
+        self.assertEqual(actual['action'], expected['action'])
+        self.assertEqual(actual['bloom'], expected['bloom'])
 
 
 class DGIMTests(unittest.TestCase):

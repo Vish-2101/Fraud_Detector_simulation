@@ -213,17 +213,14 @@ class Handler(BaseHTTPRequestHandler):
                     hashes = max(1, min(10, hashes))
                     return self.reply(find_false_positive(size=size, num_hashes=hashes))
                 elif self.path == '/api/inspect':
-                    # Dry Bloom membership check: increments query stats only,
-                    # never inserts. Demonstrates unseen vs seen identifiers.
+                    # Query-only Bloom check: no inserts and no query-stat changes.
                     kind, key = body.get('kind', 'device'), body.get('key', '')
                     if kind not in ('device', 'card') or not isinstance(key, str) or not key.strip():
                         raise ValueError('Provide kind=device|card and a non-empty key.')
                     bf = detector.bloom_device if kind == 'device' else detector.bloom_card
-                    result = bf.check(key.strip())
+                    result = bf.classify(key, count_query=False)
                     state = detector.state()
-                    state['inspection'] = {'kind': kind, 'key': key.strip(),
-                                           'result': result,
-                                           'positions': bf.positions(key.strip()),
+                    state['inspection'] = {'kind': kind, **result,
                                            'size': bf.size,
                                            'num_hashes': bf.num_hashes}
                     return self.reply(state)

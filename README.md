@@ -122,11 +122,12 @@ It is deliberately a **shadow comparator**, not the production decision maker. E
 ## Algorithm tabs
 
 ### Bloom filter
-- Fixed `m` bits, `k` hash functions (default 512/3), keyed BLAKE2b.
-- Query-before-insert, high-risk-only insertion.
-- Theoretical vs measured FPP, occupancy, device/card bit grids, current query positions.
-- **Find a false positive** shrinks the filter until an unseen key collides, showing that “possibly present” is not proof.
-- Optional rotating generations let the filter forget; scoring contribution stays +10 and corroborated.
+- Query-only checker with fixed `m=512`, `k=3`, keyed BLAKE2b; inserts and queries share one normalisation and position function.
+- Every check returns exactly one result: `definitely_absent`, `true_positive`, or `false_positive (hash collision)`.
+- Device/card bit grids highlight the current k positions and label each one lit or dark. Checks never set bits, insert, or change scoring.
+- A demo-only exact side-set maps identifiers to their first inserting event and each bit to its source identifiers. It never reads labels and is never used for scoring; a real Bloom filter cannot distinguish true from false positives.
+- **Find a false positive** runs on an isolated filter copy, so session bits are untouched.
+- Query-before-insert, high-risk-only insertion, and the corroborated +10 contribution are unchanged.
 
 ### DGIM
 - Powers-of-two buckets with timestamps, ≤2 per size, expiry outside the configured window.

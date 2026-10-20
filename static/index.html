@@ -145,30 +145,25 @@
   <div class="heading"><div><div class="eyebrow">SYLLABUS ALGORITHM · BLOOM FILTER</div><h1>Possibly seen before?</h1>
     <p class="one-liner"><b>In fraud detection:</b> a fixed-size, insert-only membership filter asks “was this device/card seen in a high-risk event?” without storing every identifier.</p></div>
     <button class="button primary" id="bloom-run-demo">▶ Run demo</button></div>
-  <div class="demo-bar"><div class="why"><b>One-click demo:</b> size a small filter, run a card-testing burst, then query a new identifier and find a real false positive.</div></div>
+  <div class="demo-bar"><div class="why"><b>One-click demo:</b> run a card-testing burst, then query an inserted identifier or find a false positive on an isolated filter.</div></div>
   <div class="split-grid">
-    <div class="card config-only">
-      <div class="card-title"><h2>Controls</h2><span class="chip">m · k · n</span></div>
-      <label class="slider-label" for="bloom-m">m bits <b id="bloom-m-value">512</b></label><input id="bloom-m" type="range" min="16" max="4096" step="8" value="512">
-      <label class="slider-label" for="bloom-k">k hash functions <b id="bloom-k-value">3</b></label><input id="bloom-k" type="range" min="1" max="10" value="3">
-      <label class="slider-label" for="bloom-n">n expected inserts <b id="bloom-n-value">100</b></label><input id="bloom-n" type="range" min="10" max="2000" step="10" value="100">
-      <p class="hint" id="bloom-sizing">Suggested for n=100 at 1% FPP: m=—, k=—.</p>
-      <button class="button secondary" id="bloom-apply">Apply sizing to session filters</button>
-      <div class="divider"></div>
+    <div class="card">
+      <div class="card-title"><h2>Query checker</h2><span class="chip" id="bloom-params">m=512, k=3</span></div>
       <label>Query kind <select id="bloom-kind"><option value="device">device</option><option value="card">card</option></select></label>
       <label>Identifier <input id="bloom-key" value="demo-laptop" maxlength="80"></label>
       <button class="button primary" id="bloom-check">Check (query only)</button>
-      <p class="hint" id="bloom-query-result">No query yet.</p>
+      <div class="bloom-result" id="bloom-query-result"><p class="hint">No query yet.</p></div>
+      <p class="hint">Demo-only ground truth: a real Bloom filter cannot tell a true positive from a false positive. The exact side-set is never used for scoring and never reads labels.</p>
+      <div class="divider"></div>
       <button class="button secondary" id="bloom-find-fp">Find a false positive</button>
+      <p class="hint">Runs on an isolated copy of the filter; session bits are untouched.</p>
       <div id="bloom-fp-result"></div>
     </div>
     <div class="card">
-      <div class="card-title"><h2>Live filter state</h2><span class="chip" id="bloom-mode">static</span></div>
-      <p id="bloom-summary" class="hint">No identifiers yet.</p>
-      <div class="fpp-row"><div><span>theoretical FPP</span><strong id="bloom-theory">—</strong></div><div><span>measured FPP</span><strong id="bloom-measured">—</strong></div><div><span>occupancy</span><strong id="bloom-occupancy">—</strong></div></div>
-      <h4>Device bits <small>current query positions glow</small></h4><div id="bloom-device-grid" class="bit-grid"></div>
-      <h4>Card bits</h4><div id="bloom-card-grid" class="bit-grid"></div>
-      <p class="hint">Insert-only means expiry of exact counters does not delete bits. The optional rotating mode keeps the old generation for queries and starts a new one for inserts, so the filter can forget. A positive is never proof: the scoring rule requires corroboration and adds at most +10.</p>
+      <div class="card-title"><h2>Filter bits</h2><span class="chip">fixed parameters</span></div>
+      <h4>Device bits <small>current query positions highlighted</small></h4><div id="bloom-device-grid" class="bit-grid"></div><div id="bloom-device-bits" class="query-bits"></div>
+      <h4>Card bits</h4><div id="bloom-card-grid" class="bit-grid"></div><div id="bloom-card-bits" class="query-bits"></div>
+      <p class="hint">Query only: checking never sets bits or inserts. A positive is never proof; scoring still requires corroboration and adds at most +10.</p>
     </div>
   </div>
 </section>

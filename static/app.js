@@ -227,26 +227,19 @@ function renderBreakdown(e, view) {
 function renderBloom() {
   if (!state.bloom) return;
   const bd = state.bloom.device, bc = state.bloom.card;
-  $('bloom-summary').textContent = `Device: m=${bd.m || bd.size}, k=${bd.k || bd.num_hashes}, ${bd.insertions} inserts, ${bd.bits_set} bits set. Card: ${bc.insertions} inserts, FPP ${pct(bc.theoretical_fpp)}.`;
-  $('bloom-mode').textContent = bd.rotating ? `rotating every ${bd.rotate_every}` : 'static';
-  $('bloom-theory').textContent = pct(bd.theoretical_fpp);
-  $('bloom-measured').textContent = bd.measured_fpp === null ? '—' : pct(bd.measured_fpp);
-  $('bloom-occupancy').textContent = pct(bd.occupancy);
+  $('bloom-params').textContent = `m=${bd.m || bd.size}, k=${bd.k || bd.num_hashes}`;
   const inspection = state.inspection;
   const kind = inspection?.kind;
-  const positions = inspection ? inspection.positions : [];
+  const positions = inspection?.positions || [];
   renderBitGrid($('bloom-device-grid'), bd.bits || [], kind === 'device' ? positions : []);
   renderBitGrid($('bloom-card-grid'), bc.bits || [], kind === 'card' ? positions : []);
-  if (inspection) {
-    $('bloom-query-result').textContent = `${inspection.kind}:${inspection.key} → ${inspection.result.replace('_', ' ')} · positions [${(inspection.positions || []).join(', ')}] (query counted, no insert)`;
+  renderQueryBits('bloom-device-bits', kind === 'device' ? inspection : null, bd);
+  renderQueryBits('bloom-card-bits', kind === 'card' ? inspection : null, bc);
+  if (inspection) renderBloomInspection(inspection);
+  else {
+    $('bloom-query-result').className = 'bloom-result';
+    $('bloom-query-result').innerHTML = '<p class="hint">No query yet.</p>';
   }
-  const mEl = $('bloom-m'), kEl = $('bloom-k'), nEl = $('bloom-n');
-  if (mEl && document.activeElement !== mEl) mEl.value = bd.m || bd.size;
-  if (kEl && document.activeElement !== kEl) kEl.value = bd.k || bd.num_hashes;
-  if (mEl) $('bloom-m-value').textContent = mEl.value;
-  if (kEl) $('bloom-k-value').textContent = kEl.value;
-  if (nEl) $('bloom-n-value').textContent = nEl.value;
-  updateBloomSizing();
 }
 
 function renderBitGrid(container, bits, positions) {
@@ -254,8 +247,8 @@ function renderBitGrid(container, bits, positions) {
   const shown = bits.slice(0, 512);
   const pos = new Set((positions || []).filter(p => p < shown.length));
   container.innerHTML = shown.map((bit, i) => {
-    const cls = bit && pos.has(i) ? 'both' : pos.has(i) ? 'query' : bit ? 'set' : '';
-    return `<span class="${cls}" title="bit ${i}: ${bit ? 'set' : 'unset'}${pos.has(i) ? ' · current query' : ''}"></span>`;
+    const cls = pos.has(i) ? (bit ? 'both' : 'query-dark') : bit ? 'set' : '';
+    return `<span class="${cls}" title="bit ${i}: ${bit ? 'lit' : 'dark'}${pos.has(i) ? ' · current query' : ''}"></span>`;
   }).join('');
   const next = container.nextElementSibling;
   if (next?.classList.contains('bit-grid-note')) next.remove();
@@ -264,15 +257,36 @@ function renderBitGrid(container, bits, positions) {
   }
 }
 
-function bloomCapacity(n, fpp = 0.01) {
-  const m = Math.max(16, Math.ceil(-n * Math.log(fpp) / (Math.log(2) ** 2)));
-  const k = Math.max(1, Math.min(10, Math.round((m / n) * Math.log(2))));
-  return {m, k};
+function renderQueryBits(id, inspection, filter) {
+  const el = $(id);
+  if (!el) return;
+  if (!inspection) { el.innerHTML = ''; return; }
+  const bits = filter.bits || [];
+  el.innerHTML = (inspection.positions || []).map(p => {
+    const lit = Boolean(bits[p]);
+    return `<span class="bloom-bit ${lit ? 'lit' : 'dark'}">bit ${p} · ${lit ? 'lit' : 'dark'}</span>`;
+  }).join('');
 }
-function updateBloomSizing() {
-  const n = Number($('bloom-n')?.value || 100);
-  const {m, k} = bloomCapacity(n, 0.01);
-  $('bloom-sizing').textContent = `For n=${n} at 1% target FPP: m=${m}, k=${k}. Apply to reset the session filters.`;
+
+function renderBloomInspection(x) {
+  const el = $('bloom-query-result');
+  el.className = `bloom-result ${x.outcome}`;
+  let body;
+  if (x.outcome === 'definitely_absent') {
+    body = '<b>Not seen.</b> Bloom filters have no false negatives, so this identifier was never inserted.';
+  } else if (x.outcome === 'true_positive') {
+    const event = x.inserted_event || {};
+    body = `<b>True positive.</b> Inserted by event <code>${esc(event.event_id || '—')}</code>. Action <span class="badge ${esc(event.action || 'allow')}">${esc(event.action || '—')}</span> · score <b>${num(event.score, 0)}</b>.`;
+  } else if (x.outcome === 'false_positive') {
+    const sources = (x.bit_sources || []).map(b => {
+      const ids = b.identifiers?.length ? b.identifiers.map(esc).join(', ') : 'no recorded source';
+      return `<li>bit ${b.position}: ${ids}</li>`;
+    }).join('');
+    body = `<b>False positive (hash collision).</b><ul>${sources}</ul>`;
+  } else {
+    body = '<b>Unknown result.</b>';
+  }
+  el.innerHTML = `<p>${body}</p><p class="hint">${esc(x.kind)} · ${esc(x.key)} · k positions [${(x.positions || []).join(', ')}] · query only, no insert.</p>`;
 }
 
 function renderDgim() {
@@ -544,11 +558,10 @@ async function resetSession() {
 /* ---------- demos ---------- */
 async function bloomRunDemo() {
   try {
-    await api('bloom/config', {size: 128, num_hashes: 3, rotate_every: 0});
     const s = await api('scenario_run', {name: 'card_testing'});
     render(s);
     switchTab('bloom');
-    toast('Bloom demo: card-testing burst inserted high-risk devices/cards. Query a fresh identifier or find a false positive.');
+    toast('Bloom demo: card-testing burst inserted high-risk devices/cards. Query an identifier or find a false positive.');
   } catch (error) { toast(error.message); }
 }
 
@@ -579,15 +592,15 @@ async function dgimRunDemo(pattern = 'random') {
 
 async function findFalsePositive() {
   try {
-    const size = Number($('bloom-m').value || 64);
-    const k = Number($('bloom-k').value || 3);
+    const size = Number(state?.bloom?.device?.size || 512);
+    const k = Number(state?.bloom?.device?.num_hashes || 3);
     const data = await api('bloom/find_false_positive', {size, num_hashes: k});
     if (!data.found) {
-      $('bloom-fp-result').innerHTML = `<p class="hint">No false positive found after ${data.insertions} inserts at m=${size}, k=${k}. Increase inserts or shrink the filter.</p>`;
+      $('bloom-fp-result').innerHTML = `<p class="hint">No false positive found after ${data.insertions} inserts on an isolated m=${size}, k=${k} filter.</p>`;
       return;
     }
     const colliding = data.collisions.map(c => `<div class="pattern">${esc(c.key)}<b>positions [${c.positions.join(', ')}]</b></div>`).join('');
-    $('bloom-fp-result').innerHTML = `<div class="pattern"><b style="margin:0">False positive found after ${data.insertions} inserts</b>Unseen key <code>${esc(data.probe)}</code> maps to bits [${data.probe_positions.join(', ')}], all already set.<br>Filter occupancy ${pct(data.bits_set / size)} · theoretical FPP ${pct(data.theoretical_fpp)}.</div>${colliding}`;
+    $('bloom-fp-result').innerHTML = `<div class="pattern"><b style="margin:0">False positive found after ${data.insertions} inserts on an isolated filter</b>Unseen key <code>${esc(data.probe)}</code> maps to bits [${data.probe_positions.join(', ')}], all already set. Session filters are untouched.<br>Filter occupancy ${pct(data.bits_set / size)} · theoretical FPP ${pct(data.theoretical_fpp)}.</div>${colliding}`;
   } catch (error) { toast(error.message); }
 }
 
@@ -707,18 +720,6 @@ function wire() {
   $('guided-prev').onclick = () => guidedGo(guidedIndex - 1);
 
   // Bloom
-  ['bloom-m', 'bloom-k', 'bloom-n'].forEach(id => $(id).oninput = () => {
-    if (id === 'bloom-m') $('bloom-m-value').textContent = $(id).value;
-    if (id === 'bloom-k') $('bloom-k-value').textContent = $(id).value;
-    if (id === 'bloom-n') $('bloom-n-value').textContent = $(id).value;
-    updateBloomSizing();
-  });
-  $('bloom-apply').onclick = async () => {
-    try {
-      render(await api('bloom/config', {size: Number($('bloom-m').value), num_hashes: Number($('bloom-k').value), rotate_every: 0}));
-      await refreshFull();
-    } catch (error) { toast(error.message); }
-  };
   $('bloom-check').onclick = async () => {
     try { render(await api('inspect', {kind: $('bloom-kind').value, key: $('bloom-key').value})); }
     catch (error) { toast(error.message); }
@@ -795,7 +796,6 @@ async function openEntity(kind, value) {
 async function boot() {
   applyPrefs();
   wire();
-  updateBloomSizing();
   updateControls();
   await loadSynthetic();
 }

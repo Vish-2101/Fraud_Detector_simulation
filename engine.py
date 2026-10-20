@@ -309,8 +309,9 @@ class Detector:
         # ---- Bloom: insert AFTER query, high-risk identifiers only ----
         high_risk = (bit == 1) or (e['action'] != 'allow')
         if high_risk:
-            self.bloom_device.add(e['device'])
-            self.bloom_card.add(e['card'])
+            event_meta = {'event_id': e['id'], 'action': e['action'], 'score': e['score']}
+            self.bloom_device.add(e['device'], **event_meta)
+            self.bloom_card.add(e['card'], **event_meta)
         e['bloom']['inserted'] = high_risk
         self.events.append(e)
         self.action_counts[e['action']] += 1
