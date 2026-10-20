@@ -170,58 +170,207 @@
 
 <section class="tab-panel hidden" id="tab-dgim">
   <div class="heading"><div><div class="eyebrow">SYLLABUS ALGORITHM · DGIM</div><h1>Count suspicious 1s without storing the window.</h1>
-    <p class="one-liner"><b>In fraud detection:</b> each device/card stream carries a binary suspicious bit (failure, disposable/forwarding email, country proxy). DGIM estimates how many 1s are in the last N events using O(log²N) buckets.</p></div>
-    <button class="button primary" id="dgim-run">▶ Run demo</button></div>
-  <div class="demo-bar"><div class="why"><b>One-click demo:</b> run the 1000-element stream, then the worst-case pattern, and compare bucket storage with exact storage.</div>
-    <button class="button secondary" id="dgim-worst">Worst-case stream</button><button class="button secondary" id="dgim-scale">1000-element scale demo</button></div>
-  <div class="split-grid">
-    <div class="card">
-      <div class="card-title"><h2>Live buckets</h2><span class="chip" id="dgim-entity-chip">most recent device</span></div>
-      <div class="config-only"><label>Inspect entity <select id="dgim-entity"></select></label>
-        <label class="slider-label" for="dgim-window-range">Window N (elements) <b id="dgim-window-value">60</b></label><input id="dgim-window-range" type="range" min="10" max="1000" step="10" value="60">
-        <label class="slider-label" for="dgim-threshold-range">Burst threshold <b id="dgim-threshold-value">5</b></label><input id="dgim-threshold-range" type="range" min="1" max="30" value="5">
+    <p class="one-liner"><b>In fraud detection:</b> each device/card stream carries a
+      <button type="button" class="apriori-term dgim-term" data-tip="1 when the event has a failed payment, throwaway email, forwarding email or country mismatch; 0 otherwise.">suspicious bit</button>
+      (failure, disposable/forwarding email, country proxy). DGIM estimates how many 1s are in the
+      <button type="button" class="apriori-term dgim-term" data-tip="The last N events for this one device or card. It counts events, not seconds.">latest N</button>
+      events using O(log N) buckets (O(log² N) bits in total).</p></div></div>
+
+  <div class="card dgim-intro">
+    <div class="card-title"><h2>What is this tab?</h2><span class="chip">plain language</span></div>
+    <p>Each device and card has a stream of events marked suspicious or not.</p>
+    <p>DGIM <button type="button" class="apriori-term dgim-term" data-tip="An approximate count built from bucket sizes, minus half the oldest bucket. It is close to the exact count, not identical.">estimates</button>
+      how many suspicious events are among the latest N, using a handful of
+      <button type="button" class="apriori-term dgim-term" data-tip="A bucket groups a power-of-two number of recent stream positions. At most two buckets of each size are kept.">boxes</button>
+      instead of storing them all.</p>
+    <p>If the estimate is high and the newest event is also suspicious, the score gets a small +10.
+      <button type="button" class="apriori-term dgim-term" data-tip="The estimate must reach this number before DGIM can add +10. The newest event must also be suspicious.">Burst threshold</button>.</p>
+    <p class="hint">The window counts this entity's events, not seconds.</p>
+  </div>
+
+  <div class="dgim-verdict card" id="dgim-verdict" role="status" aria-live="polite">
+    <div class="dgim-verdict-main"><span class="dgim-verdict-icon" id="dgim-verdict-icon" aria-hidden="true">…</span>
+      <div><strong id="dgim-verdict-title">Loading DGIM streams…</strong>
+        <p id="dgim-verdict-result" class="dgim-result">Waiting for the first state.</p></div></div>
+    <p class="hint" id="dgim-verdict-meta"></p>
+  </div>
+
+  <div class="dgim-main-grid">
+    <aside class="card dgim-ranking-card">
+      <div class="card-title"><h2>Entities to look at</h2><span class="chip" id="dgim-entity-count">0</span></div>
+      <input id="dgim-search" type="search" placeholder="Search exact device or card ID" aria-label="Search entities by exact ID">
+      <div class="dgim-chips" role="group" aria-label="Filter entities by status">
+        <button type="button" class="dgim-chip active" data-dgim-filter="all">All</button>
+        <button type="button" class="dgim-chip" data-dgim-filter="burst">Burst</button>
+        <button type="button" class="dgim-chip" data-dgim-filter="watch">Watch</button>
+        <button type="button" class="dgim-chip" data-dgim-filter="normal">Normal</button>
       </div>
-      <p id="dgim-summary" class="hint">Run a scenario to populate DGIM streams.</p>
-      <div id="dgim-buckets" class="bucket-row"></div>
-      <p class="hint">Each box is a bucket; width grows with bucket size. At most two buckets of each power of two. Estimate = sum(sizes) − oldest(size)/2, so the relative error bound is ≤ ~50%.</p>
-    </div>
-    <div class="card">
-      <div class="card-title"><h2>Estimate vs exact</h2><span class="chip" id="dgim-storage-chip">—</span></div>
-      <div id="dgim-chart" class="svg-wrap"></div>
-      <div id="dgim-demo-summary" class="hint">Run the scale demo to plot the estimate against the exact count.</div>
-      <p class="hint">Memory-bounded replay: per-entity streams are capped with an LRU (512 streams by default), so replaying 50k+ events does not grow without bound.</p>
+      <div id="dgim-entity-list" class="dgim-entity-list"></div>
+      <p class="hint" id="dgim-ranking-note"></p>
+    </aside>
+
+    <div class="dgim-detail">
+      <div class="card">
+        <div class="card-title"><h2>Last N events of this entity</h2><span class="chip" id="dgim-kind-chip">—</span></div>
+        <div class="dgim-stream-scroll">
+          <div class="dgim-stream-inner" id="dgim-stream-inner">
+            <div id="dgim-stream-cells" class="dgim-cells"></div>
+            <div id="dgim-buckets-track" class="dgim-buckets-track" aria-label="DGIM buckets spanning stream cells"></div>
+          </div>
+        </div>
+        <div class="dgim-legend">
+          <span><i class="dgim-key suspicious"></i> Suspicious (1)</span>
+          <span><i class="dgim-key clean"></i> Clean (0)</span>
+          <span><i class="dgim-key cancel"></i> Cancel (not scored)</span>
+        </div>
+        <p id="dgim-cancel-note" class="hint hidden">Cancel events are not scored.</p>
+        <p id="dgim-buckets-caption" class="hint"></p>
+        <p id="dgim-no-buckets" class="hint hidden">No buckets are needed because there are no 1s.</p>
+        <p class="hint">Hover a cell for its event, time, action, score and suspicious signal. Click a cell to open it in the Live inspector.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><h2>Did it become abnormal, and when?</h2><span class="chip" id="dgim-chart-chip">event positions</span></div>
+        <div class="dgim-metrics">
+          <div><span>DGIM estimate</span><strong id="dgim-estimate">—</strong></div>
+          <div><span>Exact count</span><strong id="dgim-exact">—</strong></div>
+          <div><span>Difference</span><strong id="dgim-difference">—</strong></div>
+        </div>
+        <p class="hint">Small differences are expected; DGIM trades a little accuracy for much less memory.</p>
+        <div id="dgim-chart" class="svg-wrap"></div>
+        <p class="hint" id="dgim-chart-caption">Each point is this entity's own event position, oldest to newest. The window counts events, not seconds.</p>
+      </div>
     </div>
   </div>
+
+  <details class="card dgim-adjust" id="dgim-adjust">
+    <summary>Adjust</summary>
+    <div class="dgim-adjust-grid">
+      <div>
+        <label class="slider-label" for="dgim-window-range">How many recent events to count (N) <b id="dgim-window-value">60</b></label>
+        <input id="dgim-window-range" type="range" min="10" max="1000" step="10" value="60">
+      </div>
+      <div>
+        <label class="slider-label" for="dgim-threshold-range">How many suspicious events count as a burst <b id="dgim-threshold-value">5</b></label>
+        <input id="dgim-threshold-range" type="range" min="1" max="30" value="5">
+      </div>
+    </div>
+    <p class="hint" id="dgim-adjust-note">Changing these re-evaluates the verdict. Stored event scores are not rewritten.</p>
+  </details>
+
+  <details class="card dgim-memory" id="dgim-memory">
+    <summary>How DGIM saves memory</summary>
+    <p id="dgim-demo-summary" class="dgim-demo-line">Counted 1s over the last 100 bits with at most 9 buckets instead of 100 stored bits; average error 12.9%, worst 26.9%, bound ~50%.</p>
+    <div class="dgim-memory-actions">
+      <button class="button primary" id="dgim-run">▶ 1000-element scale demo</button>
+      <button class="button secondary" id="dgim-worst">Worst-case stream</button>
+      <span class="chip" id="dgim-demo-storage">—</span>
+    </div>
+    <div id="dgim-demo-chart" class="svg-wrap"><p class="hint">Run the scale demo to plot the estimate against the exact count.</p></div>
+    <p class="hint">This demo uses its own stream and window, separate from the entity above. Per-entity streams are LRU-capped (512 by default), so long sessions stay bounded.</p>
+  </details>
 </section>
 
 <section class="tab-panel hidden" id="tab-apriori">
-  <div class="heading"><div><div class="eyebrow">SYLLABUS ALGORITHM · APRIORI</div><h1>Which signals occur together?</h1>
-    <p class="one-liner"><b>In fraud detection:</b> level-wise frequent-itemset mining over per-event signal baskets surfaces combinations like card velocity + failure + mismatch. It is offline analysis and never scores an event.</p></div>
-    <button class="button primary" id="apriori-run">▶ Run demo</button></div>
-  <div class="demo-bar"><div class="why"><b>One-click demo:</b> run mixed traffic, lower support to the auto-suggested value for imbalanced data, then compare all baskets with the fraud-only subset.</div>
-    <button class="button secondary" id="apriori-suggest">Use suggested support</button></div>
-  <div class="split-grid">
-    <div class="card">
-      <div class="card-title"><h2>Mining controls</h2><span class="chip">offline</span></div>
-      <div class="config-only">
-        <label class="slider-label" for="apriori-support">Min support <b id="apriori-support-value">12%</b></label><input id="apriori-support" type="range" min="1" max="60" value="12">
-        <label class="slider-label" for="apriori-confidence">Min confidence <b id="apriori-confidence-value">0%</b></label><input id="apriori-confidence" type="range" min="0" max="100" value="0">
-        <label class="check"><input type="checkbox" id="apriori-label-mode"> Offline label-as-item mode (evaluation only)</label>
-      </div>
-      <div id="apriori-levels"></div>
-      <div class="divider"></div>
-      <h4>Itemsets <small>click to highlight baskets</small></h4><div id="apriori-itemsets"></div>
-      <h4>Association rules</h4><div id="apriori-rules"></div>
-      <h4>Baskets containing the selected itemset</h4><div id="apriori-baskets" class="hint">Select an itemset.</div>
+  <div class="heading"><div><div class="eyebrow">SYLLABUS ALGORITHM · APRIORI</div><h1>Which signals occur together?</h1></div>
+    <span class="chip offline-chip">Offline analysis · never scores</span></div>
+
+  <div class="card apriori-intro">
+    <div class="apriori-about-row"><b>What it is</b><span>Apriori looks through past events for
+      <button type="button" class="apriori-term" data-glossary="signal" data-tip="One simple observation about an event.">signals</button> that tend to show up together.</span></div>
+    <div class="apriori-about-row"><b>Why it matters</b><span>Signals that co-occur can become new rules or help explain an attack. It does not score or block anything.</span></div>
+    <div class="apriori-about-row"><b>How to use it</b><span>1) Choose which events to look at. 2) Choose how strict to be. 3) Read the
+      <button type="button" class="apriori-term" data-glossary="pattern" data-tip="A set of signals that appear together often enough.">patterns</button> found.</span></div>
+    <details class="apriori-glossary" id="apriori-glossary">
+      <summary>Glossary</summary>
+      <dl>
+        <div class="glossary-entry" id="glossary-event"><dt>Event / basket</dt><dd>One event and all the signals found in that event. <em>Example: a failed signup whose basket contains “Throwaway email” and “Country mismatch”.</em></dd></div>
+        <div class="glossary-entry" id="glossary-signal"><dt>Signal</dt><dd>A simple observation that is either present or absent for one event. <em>Example: “Repeated free trial”.</em></dd></div>
+        <div class="glossary-entry" id="glossary-pattern"><dt>Pattern (itemset)</dt><dd>A set of signals that appear together often enough. <em>Example: Shared IP + Same device, many accounts.</em></dd></div>
+        <div class="glossary-entry" id="glossary-support"><dt>Support</dt><dd>The share of analyzed events that contain the pattern. <em>Example: 9 of 42 events = 21%.</em></dd></div>
+        <div class="glossary-entry" id="glossary-confidence"><dt>Confidence</dt><dd>For a directional rule, how often the conclusion appears when the premise appears. <em>Example: 6 of 6 Shared IP events also had Same device, many accounts = 100%.</em></dd></div>
+        <div class="glossary-entry" id="glossary-lift"><dt>Lift</dt><dd>How many times more often the signals co-occur than chance. <em>Example: 4.2× means 4.2 times more often than chance.</em></dd></div>
+        <div class="glossary-entry" id="glossary-prevalence"><dt>Prevalence</dt><dd>The share of analyzed events labelled abuse. <em>Example: 27 of 42 events = 64%. Labels are evaluation-only.</em></dd></div>
+        <div class="glossary-entry" id="glossary-candidate"><dt>Candidate</dt><dd>A combination Apriori checks against the event baskets. <em>Example: the pair Shared IP + Failed payment.</em></dd></div>
+        <div class="glossary-entry" id="glossary-pruning"><dt>Pruning</dt><dd>Skipping combinations that contain a rare signal, because the whole combination must be rare too. <em>Example: a rare signal cannot form a frequent triple.</em></dd></div>
+      </dl>
+    </details>
+  </div>
+
+  <div class="card apriori-guide">
+    <div class="card-title"><div><div class="eyebrow">GUIDED DEMO</div><h2>See it in four numbered steps</h2></div>
+      <button class="button primary" id="apriori-run">▶ Run guided demo</button></div>
+    <ol class="apriori-flow" id="apriori-flow">
+      <li data-flow-step="1"><span class="flow-number">1</span><span><b>Run mixed traffic</b><small>Load past synthetic events.</small></span></li>
+      <li data-flow-step="2"><span class="flow-number">2</span><span><b>Choose Balanced</b><small>Use the middle strictness preset.</small></span></li>
+      <li data-flow-step="3"><span class="flow-number">3</span><span><b>Read the top pattern</b><small>Open its matching events.</small></span></li>
+      <li data-flow-step="4"><span class="flow-number">4</span><span><b>Check whether it holds up</b><small>Compare the first and second half.</small></span></li>
+    </ol>
+    <div id="apriori-status" class="apriori-status" role="status" aria-live="polite"></div>
+  </div>
+
+  <div class="card apriori-step">
+    <div class="step-heading"><span class="step-number">1</span><div><h2>Which events?</h2><p class="hint">Choose the past events Apriori may look through.</p></div></div>
+    <div class="apriori-scope" role="radiogroup" aria-label="Which events to analyze">
+      <label class="scope-option"><input type="radio" name="apriori-scope" value="all" checked><span><b>All events</b><small id="apriori-all-count">— events</small></span></label>
+      <label class="scope-option"><input type="radio" name="apriori-scope" value="abuse"><span><b>Only abuse-labelled events (comparison)</b><small id="apriori-abuse-count">— abuse events</small></span></label>
     </div>
-    <div class="card">
-      <div class="card-title"><h2>Imbalanced data view</h2><span class="chip">auto support</span></div>
-      <div id="apriori-class"></div>
-      <div class="divider"></div>
-      <h4>Time-split check</h4><div id="apriori-split"></div>
-      <div class="divider"></div>
-      <h4>Evaluation-only label rules</h4><div id="apriori-eval"></div>
-      <p class="warning">Circular-pattern warning: baskets are rule-derived, and labels only appear in the offline evaluation mode or as a subset selector. High support or lift is not causation; a stable time-split check is stronger evidence than a single-session pattern.</p>
+    <p class="hint">Labels only choose which events to look at; they are never used to find patterns or score anything.</p>
+  </div>
+
+  <div class="card apriori-step">
+    <div class="step-heading"><span class="step-number">2</span><div><h2>How strict?</h2><p class="hint">A stricter setting keeps fewer patterns but demands more evidence.</p></div></div>
+    <div class="apriori-presets" role="radiogroup" aria-label="Pattern strictness">
+      <label class="preset-option"><input type="radio" name="apriori-preset" value="broad"><span><b>Broad</b><small data-preset-description="broad"></small></span></label>
+      <label class="preset-option"><input type="radio" name="apriori-preset" value="balanced" checked><span><b>Balanced</b><small data-preset-description="balanced"></small></span></label>
+      <label class="preset-option"><input type="radio" name="apriori-preset" value="strict"><span><b>Strict</b><small data-preset-description="strict"></small></span></label>
+    </div>
+    <p class="hint" id="apriori-preset-note">Balanced is the default.</p>
+    <details class="apriori-advanced">
+      <summary>Advanced thresholds</summary>
+      <label class="slider-label" for="apriori-support">Minimum support <b id="apriori-support-value">12%</b></label><input id="apriori-support" type="range" min="1" max="60" value="12">
+      <button type="button" class="apriori-term" data-glossary="support" data-tip="The share of events that contain the pattern.">What does support mean?</button>
+      <label class="slider-label" for="apriori-confidence">Minimum confidence <b id="apriori-confidence-value">26%</b></label><input id="apriori-confidence" type="range" min="0" max="100" value="26">
+      <button type="button" class="apriori-term" data-glossary="confidence" data-tip="How often the conclusion appears when the premise appears.">What does confidence mean?</button>
+      <div class="apriori-inline-action"><button class="button secondary" id="apriori-suggest">Use suggested support</button>
+        <span class="hint">Suggested support follows abuse prevalence so rare fraud patterns are not hidden.</span></div>
+    </details>
+  </div>
+
+  <div class="card apriori-step">
+    <div class="step-heading"><span class="step-number">3</span><div><h2>What was found</h2><p class="hint" id="apriori-result-meta">Run the guided demo or choose a setting to see patterns.</p></div></div>
+    <div id="apriori-patterns" class="apriori-patterns"></div>
+    <div class="apriori-show-all"><button class="button secondary hidden" id="apriori-show-all" aria-controls="apriori-patterns"></button></div>
+    <div id="apriori-examples" class="apriori-examples" aria-live="polite"></div>
+  </div>
+
+  <details class="card apriori-disclosure" id="apriori-how">
+    <summary>How Apriori found these</summary>
+    <ol class="apriori-stepper" id="apriori-levels"></ol>
+    <p class="hint">Apriori skips any combination containing a rare signal, because the whole combination must be rare too. That is the pruning that keeps this fast.</p>
+  </details>
+
+  <div class="card apriori-split-card">
+    <div class="card-title"><div><h2>Do the patterns hold up later?</h2><p class="hint">We find patterns in the first half of the events, then check whether they still hold in the second half.</p></div><span class="chip" id="apriori-split-chip">waiting for events</span></div>
+    <p class="hint" id="apriori-split-meta"></p>
+    <div class="verdict-legend"><span class="verdict good">✓ Holds up</span><span class="verdict bad">↘ Does not hold up</span><span class="verdict unknown">? Not enough data</span></div>
+    <div id="apriori-split" class="apriori-split-list"></div>
+    <p class="hint" id="apriori-split-hidden"></p>
+    <p class="hint">“Not enough data” means the pattern’s premise never appeared in the second half, so its later confidence cannot be measured.</p>
+  </div>
+
+  <details class="card apriori-eval-advanced" id="apriori-eval-details">
+    <summary>Advanced (evaluation only)</summary>
+    <label class="check"><input type="checkbox" id="apriori-label-mode"> Offline label-as-item mode</label>
+    <div class="warning">These patterns include the abuse label, so they are for checking the data, never for scoring. Patterns built from rules can be circular: a pattern may simply restate a rule we already use.</div>
+    <div id="apriori-eval" class="apriori-eval-list"></div>
+  </details>
+
+  <div class="card advantages apriori-advantages">
+    <div class="card-title"><h2>Advantages / Limitations</h2><span class="chip">offline only</span></div>
+    <div class="two-col">
+      <div><h4>Advantages</h4><ul><li>Patterns are readable: they name signals that show up together.</li><li>Pruning keeps the search tractable for small event baskets.</li><li>Useful for hypotheses and for explaining which signals cluster.</li></ul></div>
+      <div><h4>Limitations</h4><ul><li>Co-occurrence is not causation and is not a risk score.</li><li>Support can hide rare abuse in imbalanced data.</li><li>Baskets are rule-derived, so patterns can be circular; this is offline only.</li></ul></div>
     </div>
   </div>
 </section>
@@ -255,6 +404,8 @@
   </div>
 </div>
 <div id="toast" role="alert" class="toast hidden"></div>
-<script src="/app.js"></script>
+  <script src="/apriori_view.js"></script>
+  <script src="/dgim_view.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>

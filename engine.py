@@ -46,6 +46,32 @@ def suspicious_bit(event):
                  or event.get('country_mismatch') or event.get('forwarding_email')) else 0
 
 
+DGIM_SIGNAL_LABELS = (
+    ('failed', 'failed payment'),
+    ('disposable', 'throwaway email'),
+    ('country_mismatch', 'country mismatch'),
+    ('forwarding_email', 'forwarding email'),
+)
+
+
+def dgim_signals(event):
+    """Friendly names for the attributes that make an event suspicious."""
+    return [label for key, label in DGIM_SIGNAL_LABELS if event.get(key)]
+
+
+def dgim_status(estimate, threshold):
+    """Presentation status for a DGIM estimate (algorithm untouched)."""
+    if estimate >= threshold:
+        return 'burst'
+    return 'watch' if estimate > 0 else 'normal'
+
+
+def dgim_fired(event):
+    """True when the stored score for this event includes the DGIM +10."""
+    return any('DGIM' in str(reason.get('reason', ''))
+               for reason in event.get('reasons', []))
+
+
 class Detector:
     WINDOW = 60  # backwards-compatible default (instance: window_seconds)
     DGIM_WINDOW = 60
@@ -499,18 +525,135 @@ class Detector:
         return {'train_n': cut, 'test_n': m, 'checked': checked, 'note': ''}
 
     # ---- state ----
-    def dgim_state(self, entity=None):
-        if entity is None and self.events:
-            entity = self.events[-1]['device']
-        streams = self.dgim_device_streams
-        if entity in streams:
-            d = streams[entity]
-            st = d.to_state()
-            st['entity'] = entity
-            return st
-        return {'entity': entity, 'window_size': self.dgim_window, 'stream_pos': 0,
-                'estimate': 0, 'exact': 0, 'buckets': [], 'bucket_count': 0,
-                'entities': sorted(streams.keys())[:24]}
+    def _dgim_ranked_entities(self):
+        """Rank every device/card stream by current estimate, highest first."""
+        ranked = []
+        for kind, store in (('device', self.dgim_device_streams),
+                            ('card', self.dgim_card_streams)):
+            for name, stream in store.items():
+                estimate = stream.estimate()
+                ranked.append({
+                    'name': name,
+                    'kind': kind,
+                    'estimate': estimate,
+                    'exact': stream.exact_count(),
+                    'events': stream.pos,
+                    'bucket_count': len(stream.buckets),
+                    'status': dgim_status(estimate, self.DGIM_THRESHOLD),
+                })
+        ranked.sort(key=lambda row: (-row['estimate'], -row['events'],
+                                     row['name'], row['kind']))
+        return ranked
+
+    @staticmethod
+    def _dgim_default(ranked):
+        """Highest-ranked entity; when all are NORMAL, the busiest one."""
+        if not ranked:
+            return None
+        abnormal = [row for row in ranked if row['estimate'] > 0]
+        if abnormal:
+            return abnormal[0]
+        return sorted(ranked, key=lambda row: (-row['events'], row['name'],
+                                               row['kind']))[0]
+
+    def _dgim_entity_view(self, kind, entity, ranked):
+        store = self.dgim_card_streams if kind == 'card' else self.dgim_device_streams
+        stream = store.get(entity)
+        entity_events = [e for e in self.events if e.get(kind) == entity]
+        if stream is not None:
+            state = stream.to_state()
+            state['all_buckets'] = stream.bucket_summary()
+        else:
+            state = {
+                'window_size': self.dgim_window, 'max_buckets': 2,
+                'stream_pos': 0, 'estimate': 0, 'exact': 0,
+                'buckets': [], 'all_buckets': [], 'bucket_count': 0,
+                'invariants': {'powers_of_two': True, 'max_per_size_ok': True,
+                               'ordered': True, 'no_expired': True},
+            }
+        state.update(entity=entity, kind=kind, threshold=self.DGIM_THRESHOLD,
+                     ranked=ranked, entities=[row['name'] for row in ranked],
+                     recent=[], latest=None, first_fired=None,
+                     view_buckets=state.get('all_buckets', []))
+        state['all_normal'] = bool(ranked) and all(
+            row['status'] == 'normal' for row in ranked)
+        if not entity_events:
+            return state
+
+        # Replay only for the display history; scoring still uses the live
+        # stream above. Bucket positions are stream positions, one per event.
+        if stream is not None and 0 < stream.pos <= len(entity_events):
+            replay_events = entity_events[-stream.pos:]
+        else:
+            replay_events = entity_events
+        window = self.dgim_window
+        recent_events = replay_events[-window:]
+        recent_start = len(replay_events) - len(recent_events)
+        replay = DGIM(window_size=window, max_buckets=2)
+        recent = []
+        first_fired = None
+        for index, event in enumerate(replay_events):
+            bit = suspicious_bit(event)
+            replay.update(bit)
+            fired = dgim_fired(event)
+            if fired and first_fired is None:
+                first_fired = {'id': event['id'], 'pos': index + 1}
+            if index < recent_start:
+                continue
+            dgim_points = sum(r['points'] for r in event.get('reasons', [])
+                              if 'DGIM' in str(r.get('reason', '')))
+            score_before = min(100, sum(r['points'] for r in event.get('reasons', [])
+                                        if 'DGIM' not in str(r.get('reason', ''))))
+            recent.append({
+                'id': event['id'],
+                'pos': index + 1,
+                'time': event['time'],
+                'ts': event.get('ts'),
+                'type': event['type'],
+                'action': event['action'],
+                'score': event['score'],
+                'bit': bit,
+                'cancel': event['type'] == 'cancel',
+                'signals': dgim_signals(event),
+                'estimate': replay.estimate(),
+                'exact': replay.exact_count(),
+                'fired': fired,
+                'dgim_points': dgim_points,
+                'score_before_dgim': score_before,
+                'score_after_dgim': event['score'],
+                'device_estimate': event.get('dgim', {}).get('device_est'),
+                'device_threshold': event.get('dgim', {}).get('threshold'),
+                'device_burst': event.get('dgim', {}).get('burst'),
+            })
+
+        exact = sum(row['bit'] for row in recent)
+        if stream is None:
+            state.update(stream_pos=len(replay_events), estimate=replay.estimate(),
+                         buckets=replay.bucket_summary()[-12:],
+                         all_buckets=replay.bucket_summary(),
+                         view_buckets=replay.bucket_summary(),
+                         bucket_count=len(replay.buckets),
+                         invariants=replay.check_invariants())
+        state['exact'] = exact
+        if recent:
+            # Keep the newest visible point aligned with the live estimate.
+            recent[-1]['estimate'] = state['estimate']
+            recent[-1]['exact'] = exact
+        state['recent'] = recent
+        state['latest'] = recent[-1] if recent else None
+        state['first_fired'] = first_fired
+        return state
+
+    def dgim_state(self, entity=None, kind=None):
+        ranked = self._dgim_ranked_entities()
+        if entity is None:
+            picked = self._dgim_default(ranked)
+            if picked is not None:
+                entity, kind = picked['name'], picked['kind']
+        elif kind not in ('device', 'card'):
+            kind = 'device' if entity in self.dgim_device_streams else (
+                'card' if entity in self.dgim_card_streams else 'device')
+        return self._dgim_entity_view(kind or 'device', entity, ranked)
 
     def bloom_state(self):
         return {
@@ -528,7 +671,7 @@ class Detector:
                     false_positive_rate=ratio(cm['fp'], cm['fp'] + cm['tn']),
                     labeled=sum(cm.values()))
 
-    def state(self, dgim_entity=None, light=False):
+    def state(self, dgim_entity=None, dgim_entity_kind=None, light=False):
         counts = self.action_counts
         series = self.series_counts
         result = dict(
@@ -547,7 +690,7 @@ class Detector:
             events=list(reversed(self.events[-150:])),
             series=[dict(time=t, **v) for t, v in sorted(series.items())][-40:],
             bloom=self.bloom_state(),
-            dgim=self.dgim_state(dgim_entity),
+            dgim=self.dgim_state(dgim_entity, dgim_entity_kind),
             dataset=self.dataset,
             baseline_available=bool(self.baseline_model),
             baseline_training=self.baseline_model.get('training') if self.baseline_model else None,
@@ -556,7 +699,7 @@ class Detector:
         if light:
             result.update(patterns=[], rules=[], analyzed=0,
                           apriori_eval={'itemsets': [], 'rules': [], 'analyzed': 0},
-                          apriori_class=None, time_split=None,
+                          apriori_class=None, apriori_current=None, time_split=None,
                           shadow=self.shadow_summary(light=True), evaluation=None)
             return result
         ap = self.apriori()
@@ -567,6 +710,7 @@ class Detector:
             apriori_eval={'itemsets': ap_eval['itemsets'][:8], 'rules': ap_eval['rules'][:8],
                           'analyzed': ap_eval['analyzed']},
             apriori_class=self.apriori_class_comparison(),
+            apriori_current=self.apriori_class_comparison(min_support=self.apriori_support),
             time_split=self.apriori_time_split(),
             shadow=self.shadow_summary(),
             evaluation=evaluation_report(self.events, self.review_threshold, self.block_threshold),

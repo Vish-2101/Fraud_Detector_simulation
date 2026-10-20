@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import RLock
 from urllib.parse import urlparse, parse_qs
+from collections import deque
 import argparse
 import csv
 import io
@@ -62,6 +63,7 @@ class Handler(BaseHTTPRequestHandler):
             if route == '/api/state':
                 qs = parse_qs(parsed.query)
                 entity = (qs.get('entity') or [None])[0]
+                entity_kind = (qs.get('entity_kind') or [None])[0]
                 support = (qs.get('min_support') or [None])[0]
                 confidence = (qs.get('min_confidence') or [None])[0]
                 if support is not None:
@@ -75,7 +77,9 @@ class Handler(BaseHTTPRequestHandler):
                     except (TypeError, ValueError):
                         pass
                 light = (qs.get('light') or ['0'])[0] in ('1', 'true')
-                return self.reply(detector.state(dgim_entity=entity, light=light))
+                return self.reply(detector.state(dgim_entity=entity,
+                                                 dgim_entity_kind=entity_kind,
+                                                 light=light))
             if route == '/api/datasets':
                 return self.reply({'datasets': catalog(), 'default': DEFAULT_REPLAY,
                                    'limits': {'max_events': detector.LIMIT}})
@@ -132,7 +136,9 @@ class Handler(BaseHTTPRequestHandler):
                     row['baseline_action'] = bl.get('action', '')
                     writer.writerow({k: "'" + v if isinstance(v, str) and v.startswith(('=', '+', '-', '@', '\t', '\r')) else v for k, v in row.items()})
                 return self.reply(out.getvalue().encode(), content_type='text/csv; charset=utf-8')
-        allowed = {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css'}
+        allowed = {'/': 'index.html', '/app.js': 'app.js',
+                   '/apriori_view.js': 'apriori_view.js',
+                   '/dgim_view.js': 'dgim_view.js', '/style.css': 'style.css'}
         if route not in allowed:
             return self.reply({'error': 'Not found'}, 404)
         path = ROOT / 'static' / allowed[route]
@@ -242,7 +248,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply({'error': 'Not found'}, 404)
                 # Honor optional entity selection for DGIM panel.
                 entity = body.get('dgim_entity') if isinstance(body.get('dgim_entity'), str) else None
-                self.reply(detector.state(dgim_entity=entity or None))
+                entity_kind = body.get('dgim_entity_kind') if body.get('dgim_entity_kind') in ('device', 'card') else None
+                self.reply(detector.state(dgim_entity=entity or None,
+                                          dgim_entity_kind=entity_kind))
         except (ValueError, TypeError, FileNotFoundError) as exc:
             self.reply({'error': str(exc)}, 400)
         except Exception as exc:  # keep the demo server alive on unexpected input
@@ -263,6 +271,8 @@ class Handler(BaseHTTPRequestHandler):
             detector.DGIM_WINDOW = value
             for stream in list(detector.dgim_device_streams.values()) + list(detector.dgim_card_streams.values()):
                 stream.window_size = value
+                # Keep the demo-only exact counter aligned with the new window.
+                stream.history = deque(stream.history, maxlen=value)
         if 'dgim_max_streams' in body:
             value = body['dgim_max_streams']
             if isinstance(value, bool) or not isinstance(value, int) or not 16 <= value <= 10000:

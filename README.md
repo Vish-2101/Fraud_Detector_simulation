@@ -132,9 +132,11 @@ It is deliberately a **shadow comparator**, not the production decision maker. E
 ### DGIM
 - Powers-of-two buckets with timestamps, ≤2 per size, expiry outside the configured window.
 - Estimate = sum(sizes) − oldest(size)/2, with the classical ~50% relative-error bound.
-- Live buckets for a selected device/card, window and burst-threshold sliders.
+- Ranked device/card list with a BURST / WATCH / NORMAL verdict, latest-event DGIM result, one stream cell per event with bucket overlays, and a history chart that pins the first +10.
+- Window and burst-threshold changes re-evaluate the verdict immediately without rewriting stored event scores.
 - **1000-element scale demo** compares bucket storage with exact storage for random and worst-case streams.
 - Per-entity streams are LRU-capped so long sessions stay bounded.
+- Demo script: [`docs/DGIM_TAB_WALKTHROUGH.md`](docs/DGIM_TAB_WALKTHROUGH.md).
 
 ### Apriori
 - Level-wise frequent-itemset mining over fired-signal baskets (Bloom/DGIM markers excluded), subset pruning, ≤3 items.
@@ -164,7 +166,7 @@ python tools/train_baseline.py
 
 ## API (loopback only)
 
-`GET /api/state` (`?light=1`, `?entity=`, `?min_support=`, `?min_confidence=`) · `GET /api/datasets` · `GET /api/entity` · `GET /api/dgim_demo` · `GET /api/export`
+`GET /api/state` (`?light=1`, `?entity=`, `?entity_kind=`, `?min_support=`, `?min_confidence=`) · `GET /api/datasets` · `GET /api/entity` · `GET /api/dgim_demo` · `GET /api/export`
 `POST /api/event` · `/api/scenario` · `/api/scenario_run` · `/api/replay` · `/api/reset` · `/api/advance` · `/api/thresholds` · `/api/config` · `/api/apriori` · `/api/inspect` · `/api/bloom/config` · `/api/bloom/find_false_positive`
 
 Cross-origin POSTs are rejected; responses are JSON (`/api/export` returns CSV).

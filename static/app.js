@@ -6,12 +6,25 @@ let demoEvents = [];
 let playing = false;
 let paused = false;
 let generation = 0;
-let aprioriItemsets = [];
-let aprioriSelected = null;
+let aprioriModel = [];
+let aprioriSelectedKey = null;
+let aprioriScope = 'all';
+let aprioriLimit = 5;
+let aprioriBusy = false;
+let aprioriBusyMessage = 'Mining patterns…';
+let aprioriError = '';
+let aprioriNotice = 'Ready. Choose a setting or run the guided demo.';
+let aprioriGuidedStep = 0;
+let aprioriPresetReady = false;
 let guidedIndex = 0;
 let guidedOpen = false;
 let lastTotal = 0;
 let lastBeep = 0;
+let dgimFilter = 'all';
+let dgimSearch = '';
+let dgimLoading = false;
+let dgimError = '';
+let dgimUpdateNote = '';
 let audioCtx = null;
 let soundOn = localStorage.getItem('radar-sound') !== 'off';
 
@@ -289,76 +302,585 @@ function renderBloomInspection(x) {
   el.innerHTML = `<p>${body}</p><p class="hint">${esc(x.kind)} · ${esc(x.key)} · k positions [${(x.positions || []).join(', ')}] · query only, no insert.</p>`;
 }
 
+const dgimView = () => window.DgimView;
+
 function renderDgim() {
-  const d = state.dgim || {};
+  const view = dgimView();
+  const d = state?.dgim;
+  if (!view || !d) return;
+  const threshold = d.threshold ?? state.dgim_config?.threshold ?? 5;
+  const windowSize = d.window_size || state.dgim_config?.window || 60;
   const windowEl = $('dgim-window-range');
   const thresholdEl = $('dgim-threshold-range');
-  if (windowEl && document.activeElement !== windowEl) windowEl.value = d.window_size || state.dgim_config?.window || 60;
-  if (thresholdEl && document.activeElement !== thresholdEl) thresholdEl.value = state.dgim_config?.threshold || 5;
-  $('dgim-window-value').textContent = d.window_size || state.dgim_config?.window || 60;
-  $('dgim-threshold-value').textContent = state.dgim_config?.threshold || 5;
-  const select = $('dgim-entity');
-  if (select) {
-    const entities = d.entities || (d.entity ? [d.entity] : []);
-    const current = select.value || d.entity || '';
-    select.innerHTML = entities.length ? entities.map(k => `<option ${k === current ? 'selected' : ''}>${esc(k)}</option>`).join('') : '<option value="">—</option>';
+  if (windowEl && document.activeElement !== windowEl) windowEl.value = windowSize;
+  if (thresholdEl && document.activeElement !== thresholdEl) thresholdEl.value = threshold;
+  if ($('dgim-window-value')) $('dgim-window-value').textContent = windowSize;
+  if ($('dgim-threshold-value')) $('dgim-threshold-value').textContent = threshold;
+  const search = $('dgim-search');
+  if (search && document.activeElement !== search) search.value = dgimSearch;
+  document.querySelectorAll('[data-dgim-filter]').forEach(button => {
+    button.classList.toggle('active', button.dataset.dgimFilter === dgimFilter);
+  });
+  $('dgim-entity-count').textContent = (d.ranked || []).length;
+  renderDgimVerdict(d, threshold, windowSize);
+  renderDgimEntityList(d, threshold);
+  renderDgimStream(d);
+  renderDgimMetrics(d);
+  const chart = $('dgim-chart');
+  if (chart) chart.innerHTML = svgDgimEntityChart(d, threshold);
+}
+
+function renderDgimVerdict(d, threshold, windowSize) {
+  const view = dgimView();
+  const box = $('dgim-verdict');
+  if (!box) return;
+  box.className = 'dgim-verdict card normal';
+  if (dgimLoading) {
+    box.className = 'dgim-verdict card';
+    $('dgim-verdict-icon').textContent = '…';
+    $('dgim-verdict-title').textContent = 'Loading this entity…';
+    $('dgim-verdict-result').textContent = 'DGIM is reading the stream and buckets.';
+    $('dgim-verdict-meta').textContent = '';
+    return;
   }
-  $('dgim-entity-chip').textContent = d.entity || 'no entity';
-  $('dgim-summary').innerHTML = d.entity
-    ? `Entity <b>${esc(d.entity)}</b> · stream position ${d.stream_pos} · approximate <b>${d.estimate}</b> vs exact <b>${d.exact}</b> suspicious 1s in the last ${d.window_size} elements · ${d.bucket_count} buckets.`
-    : 'Run a scenario to populate per-device DGIM streams.';
-  const buckets = d.buckets || [];
+  if (dgimError) {
+    box.className = 'dgim-verdict card error';
+    $('dgim-verdict-icon').textContent = '!';
+    $('dgim-verdict-title').textContent = 'Could not update the DGIM view.';
+    $('dgim-verdict-result').textContent = dgimError;
+    $('dgim-verdict-meta').textContent = 'Try the control again; the last good state is still shown.';
+    return;
+  }
+  if (!(d.recent || []).length) {
+    box.className = 'dgim-verdict card normal';
+    $('dgim-verdict-icon').textContent = '○';
+    $('dgim-verdict-title').textContent = d.entity ? 'No events for this entity yet.' : 'No DGIM streams yet.';
+    $('dgim-verdict-result').textContent = d.entity
+      ? 'DGIM has nothing to score for this entity.'
+      : 'Run a scenario to populate per-device and per-card streams.';
+    $('dgim-verdict-meta').textContent = 'The window counts this entity\'s events, not seconds.';
+    return;
+  }
+  const banner = view.bannerFor(d);
+  const result = view.resultFor(d);
+  box.className = `dgim-verdict card ${banner.tone}`;
+  $('dgim-verdict-icon').textContent = banner.icon;
+  $('dgim-verdict-title').textContent = banner.title;
+  $('dgim-verdict-result').textContent = result.text;
+  let meta = `Window N = ${windowSize} events · burst threshold = ${threshold}. The window counts this entity's events, not seconds.`;
+  if (d.all_normal && (d.ranked || []).length) meta += ` ${view.ALL_NORMAL_MESSAGE}`;
+  if (dgimUpdateNote) meta = `${dgimUpdateNote} ${meta}`;
+  $('dgim-verdict-meta').textContent = meta;
+}
+
+function renderDgimEntityList(d, threshold) {
+  const view = dgimView();
+  const list = $('dgim-entity-list');
+  if (!list) return;
+  let rows = (d.ranked || []).map(row => ({
+    ...row, status: view.statusFor(row.estimate, threshold).key,
+  }));
+  if (dgimFilter !== 'all') rows = rows.filter(row => row.status === dgimFilter);
+  const query = dgimSearch.trim().toLowerCase();
+  if (query) rows = rows.filter(row => String(row.name).toLowerCase().includes(query));
+  if (!rows.length) {
+    list.innerHTML = `<div class="dgim-empty"><b>${(d.ranked || []).length ? 'No entity matches.' : 'No entities yet.'}</b>
+      ${(d.ranked || []).length ? 'Clear the filter or search for another ID.' : 'Run a scenario to create device and card streams.'}</div>`;
+  } else {
+    list.innerHTML = rows.map(row => {
+      const status = view.STATUS[row.status] || view.STATUS.normal;
+      const selected = d.entity === row.name && d.kind === row.kind;
+      return `<button type="button" class="dgim-entity ${selected ? 'selected' : ''}"
+        data-dgim-kind="${esc(row.kind)}" data-dgim-name="${esc(row.name)}"
+        aria-pressed="${selected ? 'true' : 'false'}">
+        <span><span class="dgim-entity-name">${esc(row.name)}</span>
+          <span class="dgim-entity-meta"><span class="dgim-kind-tag">${esc(row.kind)}</span>
+            ${row.events} events · ${row.bucket_count} buckets</span></span>
+        <span class="dgim-entity-right"><span class="dgim-estimate-num">${num(row.estimate)}</span>
+          <span class="dgim-status ${status.tone}"><span aria-hidden="true">${status.icon}</span> ${status.label}</span></span>
+      </button>`;
+    }).join('');
+  }
+  $('dgim-ranking-note').textContent = d.all_normal && (d.ranked || []).length
+    ? view.ALL_NORMAL_MESSAGE
+    : 'Sorted by current DGIM estimate, highest first.';
+}
+
+function dgimCellTitle(row) {
+  const bit = row.cancel ? 'cancel event, not scored' : row.bit ? 'suspicious (1)' : 'clean (0)';
+  const signal = (row.signals || []).length ? row.signals.join(', ') : 'none';
+  const time = fmtTime((row.time || 0) - (state?.dataset_start || 0));
+  return `Event ${row.id} · ${time} · ${row.type} · action ${row.action} · score ${num(row.score, 1)} · ${bit} · signal: ${signal}`;
+}
+
+function renderDgimStream(d) {
+  const view = dgimView();
+  const cells = $('dgim-stream-cells');
+  const track = $('dgim-buckets-track');
+  const inner = $('dgim-stream-inner');
+  const caption = $('dgim-buckets-caption');
+  const none = $('dgim-no-buckets');
+  if (!cells || !track) return;
+  $('dgim-kind-chip').textContent = d.entity
+    ? `${view.kindLabel(d.kind)} · ${d.entity}` : 'no entity';
+  const rows = d.recent || [];
+  if (!rows.length) {
+    inner.style.width = 'auto';
+    cells.innerHTML = `<div class="dgim-empty"><b>${d.entity ? 'No events for this entity yet.' : 'No entity selected.'}</b>
+      ${d.entity ? 'Choose another entity or run a scenario.' : 'Pick an entity from the ranked list.'}</div>`;
+    track.innerHTML = '';
+    if (caption) caption.textContent = '';
+    if (none) none.classList.add('hidden');
+    if ($('dgim-cancel-note')) $('dgim-cancel-note').classList.add('hidden');
+    return;
+  }
+  const n = rows.length;
+  const cell = n <= 40 ? 20 : n <= 80 ? 15 : n <= 150 ? 11 : n <= 300 ? 7 : 4;
+  const gap = n <= 150 ? 2 : 1;
+  inner.style.setProperty('--dgim-cell', `${cell}px`);
+  inner.style.setProperty('--dgim-gap', `${gap}px`);
+  inner.style.width = `${n * cell + (n - 1) * gap}px`;
+  cells.innerHTML = rows.map((row, index) => {
+    const cls = row.cancel ? 'cancel' : row.bit ? 'suspicious' : 'clean';
+    const newest = index === rows.length - 1 ? ' newest' : '';
+    return `<button type="button" class="dgim-cell ${cls}${newest}" data-dgim-event="${esc(row.id)}"
+      title="${esc(dgimCellTitle(row))}" aria-label="${esc(dgimCellTitle(row))}"></button>`;
+  }).join('');
+  const startPos = rows[0].pos;
+  const endPos = rows[n - 1].pos;
+  const spans = view.bucketSpans(d.view_buckets || [], startPos, endPos);
   const colors = ['#6554d9','#3b7dd8','#229578','#bc8837','#de6378','#8e5cc7','#2f9bb3'];
-  $('dgim-buckets').innerHTML = buckets.length ? buckets.map((b, i) => {
-    const width = Math.min(90, 18 + Math.log2(b.size + 1) * 16);
-    return `<div class="bucket" style="width:${width}px;height:${Math.min(62, 18 + Math.log2(b.size + 1) * 10)}px;background:${colors[i % colors.length]}" title="position ${b.pos}, size ${b.size}">${b.size}</div>`;
-  }).join('') : '<span class="hint">No buckets yet (no suspicious 1s).</span>';
+  track.innerHTML = spans.map(span => {
+    const left = span.left * (cell + gap);
+    const width = Math.max(cell, span.width * (cell + gap) - gap);
+    const color = colors[span.index % colors.length];
+    return `<div class="dgim-bucket-box" style="left:${left}px;width:${width}px;background:${color}"
+      title="Bucket ${span.index + 1}: size ${span.size}, covers event positions ${span.startPos}–${span.endPos}">${span.size}</div>`;
+  }).join('');
+  if (caption) {
+    caption.textContent = spans.length
+      ? `DGIM does not keep these cells. It keeps only these ${spans.length} boxes and estimates the count from them.`
+      : '';
+  }
+  const cancelNote = $('dgim-cancel-note');
+  if (cancelNote) cancelNote.classList.toggle('hidden', !rows.some(row => row.cancel));
+  if (none) none.classList.toggle('hidden', Number(d.exact) !== 0 || spans.length > 0);
+}
+
+function renderDgimMetrics(d) {
+  const has = Boolean(d.entity && (d.recent || []).length);
+  $('dgim-estimate').textContent = has ? num(d.estimate) : '—';
+  $('dgim-exact').textContent = has ? num(d.exact) : '—';
+  const difference = has ? Number(d.estimate) - Number(d.exact) : null;
+  $('dgim-difference').textContent = has
+    ? `${difference > 0 ? '+' : ''}${difference}` : '—';
+}
+
+function svgDgimEntityChart(d, threshold) {
+  const view = dgimView();
+  const rows = d.recent || [];
+  if (!rows.length) return '<div class="dgim-empty"><b>No events to chart.</b>Run a scenario or choose another entity.</div>';
+  const w = 680, h = 250, padL = 40, padR = 18, padT = 26, padB = 38;
+  const maxY = Math.max(1, threshold, ...rows.map(row => Math.max(row.estimate, row.exact)));
+  const maxX = Math.max(1, rows.length - 1);
+  const x = index => padL + (index / maxX) * (w - padL - padR);
+  const y = value => h - padB - (value / maxY) * (h - padT - padB);
+  const step = maxX ? (w - padL - padR) / maxX : 0;
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(f =>
+    `<line x1="${padL}" y1="${y(maxY * f)}" x2="${w - padR}" y2="${y(maxY * f)}" stroke="var(--line)"/>
+     <text x="${padL - 6}" y="${y(maxY * f) + 3}" text-anchor="end" class="dgim-chart-label">${Math.round(maxY * f)}</text>`).join('');
+  const shades = view.burstSpans(rows, threshold).map(span => {
+    const left = Math.max(padL, x(span.start) - (span.start ? step / 2 : 0));
+    const right = Math.min(w - padR, x(span.end) + (span.end < rows.length - 1 ? step / 2 : 0));
+    return `<rect x="${left}" y="${padT}" width="${Math.max(2, right - left)}" height="${h - padT - padB}"
+      fill="rgba(222,99,120,.12)"/>`;
+  }).join('');
+  const estimate = rows.map((row, index) =>
+    `${index ? 'L' : 'M'}${x(index).toFixed(1)},${y(row.estimate).toFixed(1)}`).join(' ');
+  const exact = rows.map((row, index) =>
+    `${index ? 'L' : 'M'}${x(index).toFixed(1)},${y(row.exact).toFixed(1)}`).join(' ');
+  const pinIndex = rows.findIndex(row => row.fired);
+  let pin = '';
+  if (pinIndex >= 0) {
+    const px = x(pinIndex);
+    const py = y(rows[pinIndex].estimate);
+    const anchor = px > w - 150 ? 'end' : 'start';
+    const labelX = anchor === 'end' ? px - 7 : px + 7;
+    pin = `<line x1="${px}" y1="${py}" x2="${px}" y2="${h - padB}" stroke="var(--red)" stroke-width="1.5" stroke-dasharray="3 3"/>
+      <circle cx="${px}" cy="${py}" r="5" fill="var(--red)" stroke="var(--card)" stroke-width="2"/>
+      <text x="${labelX}" y="${Math.max(padT, py - 10)}" text-anchor="${anchor}" class="dgim-chart-pin-label">burst detected here</text>`;
+  }
+  const thresholdY = y(threshold);
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="DGIM estimate, exact count and burst threshold over this entity's event positions">
+    ${shades}${grid}
+    <line x1="${padL}" y1="${thresholdY}" x2="${w - padR}" y2="${thresholdY}" stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="7 4"/>
+    <text x="${w - padR}" y="${Math.max(padT, thresholdY - 5)}" text-anchor="end" class="dgim-chart-label">burst threshold ${threshold}</text>
+    <line x1="${padL}" y1="${h - padB}" x2="${w - padR}" y2="${h - padB}" stroke="var(--line)"/>
+    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${h - padB}" stroke="var(--line)"/>
+    <path d="${estimate}" fill="none" stroke="var(--red)" stroke-width="2"/>
+    <path d="${exact}" fill="none" stroke="var(--blue)" stroke-width="1.8" stroke-dasharray="5 4"/>
+    ${pin}
+    <text x="${padL}" y="${h - 8}" class="dgim-chart-label">oldest event</text>
+    <text x="${w - padR}" y="${h - 8}" text-anchor="end" class="dgim-chart-label">newest event</text>
+    <g transform="translate(${padL + 4},${padT - 8})">
+      <line x1="0" y1="0" x2="18" y2="0" stroke="var(--red)" stroke-width="2"/>
+      <text x="23" y="3" class="dgim-chart-label">DGIM estimate</text>
+      <line x1="125" y1="0" x2="143" y2="0" stroke="var(--blue)" stroke-width="1.8" stroke-dasharray="5 4"/>
+      <text x="148" y="3" class="dgim-chart-label">exact count</text>
+      <line x1="228" y1="0" x2="246" y2="0" stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="7 4"/>
+      <text x="251" y="3" class="dgim-chart-label">burst threshold</text>
+    </g>
+  </svg>`;
+}
+
+const aprioriView = () => window.AprioriView;
+
+function aprioriTerm(text, key) {
+  const tip = aprioriView()?.TERM_TIPS?.[key] || '';
+  return `<span class="apriori-term" role="button" tabindex="0" data-glossary="${esc(key)}" data-tip="${esc(tip)}">${esc(text)}</span>`;
+}
+
+function aprioriChip(item, match = false) {
+  const view = aprioriView();
+  const tone = view.signalTone(item);
+  return `<span class="signal-chip tone-${tone}${match ? ' match' : ''}">${esc(view.signalLabel(item))}</span>`;
+}
+
+function aprioriChipList(items, matches = null) {
+  const chips = (items || []).map(item => aprioriChip(item, matches ? matches.has(item) : false));
+  if (!chips.length) return 'no signals';
+  if (chips.length === 1) return chips[0];
+  if (chips.length === 2) return `${chips[0]} and ${chips[1]}`;
+  return `${chips.slice(0, -1).join(', ')} and ${chips[chips.length - 1]}`;
+}
+
+function aprioriStrength(strength, lift) {
+  const liftText = lift === null || lift === undefined ? '' : `<span class="pattern-lift">${esc(aprioriView().formatLift(lift))} vs chance</span>`;
+  return `<span class="strength-badge ${strength.tone}" title="Lift ${esc(aprioriView().formatLift(lift))}"><span aria-hidden="true">${strength.icon}</span> ${esc(strength.label)}</span>${liftText}`;
 }
 
 function renderApriori() {
-  if (!state.apriori_config) return;
-  const support = Math.round(state.apriori_config.min_support * 100);
-  const confidence = Math.round((state.apriori_config.min_confidence || 0) * 100);
-  const supportEl = $('apriori-support'), confidenceEl = $('apriori-confidence');
-  if (supportEl && document.activeElement !== supportEl) supportEl.value = support;
-  if (confidenceEl && document.activeElement !== confidenceEl) confidenceEl.value = confidence;
-  $('apriori-support-value').textContent = `${support}%`;
-  $('apriori-confidence-value').textContent = `${confidence}%`;
-  const levels = state.apriori_levels || [];
-  $('apriori-levels').innerHTML = levels.length ? `<div class="levels">${levels.map(l => `<div class="level">L${l.level}<b>${l.frequent}</b>${l.candidates} candidates → ${l.frequent} frequent</div>`).join('')}</div>` : '<p class="hint">Run a scenario for level-wise counts.</p>';
-  aprioriItemsets = state.patterns || [];
-  $('apriori-itemsets').innerHTML = aprioriItemsets.length ? aprioriItemsets.map((p, i) => `<div class="pattern clickable" data-itemset-index="${i}">${p.items.map(x => esc(x.replaceAll('_', ' '))).join(' + ')}<b>${pct(p.support)} support · ${p.count} of ${state.analyzed}</b></div>`).join('') : `<p class="hint">No frequent itemsets yet at ${support}% support. Try the suggested support or run card-testing/trial-abuse.</p>`;
-  const rules = state.rules || [];
-  $('apriori-rules').innerHTML = rules.length ? rules.map(r => `<div class="pattern">${r.antecedent.map(x => esc(x.replaceAll('_', ' '))).join(' + ')} ⇒ ${r.consequent.map(x => esc(x.replaceAll('_', ' '))).join(' + ')}<b>conf ${pct(r.confidence)} · lift ${num(r.lift, 2)} · support ${pct(r.support)}</b></div>`).join('') : '<p class="hint">No rules above the confidence threshold.</p>';
-  renderAprioriBaskets();
-  const cls = state.apriori_class;
-  $('apriori-class').innerHTML = cls ? `
-    <p class="hint">Prevalence <b>${pct(cls.prevalence)}</b> · suggested support <b>${pct(cls.suggested_min_support)}</b> · using ${pct(cls.min_support)}. ${esc(cls.note)}</p>
-    <div class="two-col">
-      <div><h4>All baskets (${cls.all_events.analyzed})</h4>${(cls.all_events.itemsets || []).slice(0, 6).map(p => `<div class="pattern">${p.items.map(x => esc(x.replaceAll('_',' '))).join(' + ')}<b>${pct(p.support)}</b></div>`).join('') || '<p class="hint">None.</p>'}</div>
-      <div><h4>Fraud-only subset (${cls.abuse_only.analyzed})</h4>${(cls.abuse_only.itemsets || []).slice(0, 6).map(p => `<div class="pattern">${p.items.map(x => esc(x.replaceAll('_',' '))).join(' + ')}<b>${pct(p.support)}</b></div>`).join('') || '<p class="hint">No labeled abuse baskets.</p>'}</div>
-    </div>` : '<p class="hint">Full state not loaded yet.</p>';
-  const ts = state.time_split;
-  $('apriori-split').innerHTML = ts?.checked?.length
-    ? `<p class="hint">Mine first ${ts.train_n}, test on last ${ts.test_n}.</p>${ts.checked.map(c => `<div class="pattern">${c.antecedent.map(x => esc(x.replaceAll('_',' ').replace('label:',''))).join(' + ')} ⇒ ${c.consequent.map(x => esc(x.replaceAll('_',' ').replace('label:',''))).join(' + ')}<b>train ${pct(c.train_confidence)} → test ${c.test_confidence === null ? '—' : pct(c.test_confidence)} · lift ${num(c.lift, 2)}</b></div>`).join('')}`
-    : `<p class="hint">${esc(ts?.note || 'Need at least 4 events for a time split.')}</p>`;
-  const ev = state.apriori_eval;
-  $('apriori-eval').innerHTML = ev?.rules?.length
-    ? `<p class="warning">Offline mode only. Labels are added as basket items here; this is not scoring.</p>${ev.rules.map(r => `<div class="pattern">${r.antecedent.map(x => esc(x.replaceAll('_',' ').replace('label:',''))).join(' + ')} ⇒ ${r.consequent.map(x => esc(x.replaceAll('_',' ').replace('label:',''))).join(' + ')}<b>conf ${pct(r.confidence)} · lift ${num(r.lift, 2)}</b></div>`).join('')}`
-    : '<p class="hint">No label rules yet. Run Mixed traffic.</p>';
-  $('apriori-eval').classList.toggle('hidden', !$('apriori-label-mode')?.checked);
+  const view = aprioriView();
+  if (!view || !state?.apriori_config) return;
+  renderAprioriConfig();
+  renderAprioriCounts();
+  const includeLabels = Boolean($('apriori-label-mode')?.checked);
+  const scope = view.scopeData(state, aprioriScope);
+  aprioriModel = view.buildPatternModel(scope.itemsets, scope.rules, scope.analyzed, {includeLabels});
+  if (aprioriSelectedKey && !aprioriModel.some(pattern => pattern.key === aprioriSelectedKey)) aprioriSelectedKey = null;
+  const preset = view.presetForConfig(state.apriori_config.min_support, state.apriori_config.min_confidence);
+  const presetLabel = preset ? view.PRESETS[preset].label : 'Custom thresholds';
+  const scopeLabel = aprioriScope === 'abuse' ? `${scope.analyzed} abuse-labelled events` : `${scope.analyzed} events`;
+  $('apriori-result-meta').textContent = `${scopeLabel} · ${presetLabel} · ${aprioriModel.length} pattern${aprioriModel.length === 1 ? '' : 's'}`;
+  renderAprioriPatterns();
+  renderAprioriExamples();
+  renderAprioriLevels(scope);
+  renderAprioriSplit(view.timeSplitView(state, includeLabels));
+  renderAprioriEval(includeLabels);
+  renderAprioriFlow();
+  renderAprioriStatus();
 }
 
-function renderAprioriBaskets() {
-  if (!aprioriSelected) {
-    $('apriori-baskets').innerHTML = '<span class="hint">Select an itemset.</span>';
+function renderAprioriConfig() {
+  const view = aprioriView();
+  document.querySelectorAll('[data-preset-description]').forEach(el => {
+    const preset = view.PRESETS[el.dataset.presetDescription];
+    if (preset) el.textContent = preset.description;
+  });
+  const support = Number(state.apriori_config.min_support);
+  const confidence = Number(state.apriori_config.min_confidence || 0);
+  const supportEl = $('apriori-support');
+  const confidenceEl = $('apriori-confidence');
+  if (supportEl && document.activeElement !== supportEl) supportEl.value = Math.max(1, Math.round(support * 100));
+  if (confidenceEl && document.activeElement !== confidenceEl) confidenceEl.value = Math.round(confidence * 100);
+  $('apriori-support-value').textContent = view.formatPercent(support);
+  $('apriori-confidence-value').textContent = `${Math.round(confidence * 100)}%`;
+  const preset = view.presetForConfig(support, confidence);
+  document.querySelectorAll('input[name="apriori-preset"]').forEach(input => {
+    input.checked = input.value === preset;
+  });
+  $('apriori-preset-note').textContent = preset
+    ? `${view.PRESETS[preset].label} is selected.`
+    : `Custom thresholds are active: ${view.formatPercent(support)} support and ${Math.round(confidence * 100)}% confidence.`;
+}
+
+function renderAprioriCounts() {
+  const view = aprioriView();
+  const cls = state.apriori_class || {};
+  const total = Number(cls.all_events?.analyzed ?? state.analyzed ?? 0);
+  const abuse = Number(cls.abuse_only?.analyzed ?? 0);
+  const prevalence = cls.prevalence === null || cls.prevalence === undefined
+    ? (total ? abuse / total : 0)
+    : Number(cls.prevalence);
+  $('apriori-all-count').textContent = `${total} event${total === 1 ? '' : 's'}`;
+  $('apriori-abuse-count').textContent = `${abuse} abuse event${abuse === 1 ? '' : 's'} (${view.formatPercent(prevalence)})`;
+  document.querySelectorAll('input[name="apriori-scope"]').forEach(input => {
+    input.checked = input.value === aprioriScope;
+  });
+}
+
+function renderAprioriPatterns() {
+  const view = aprioriView();
+  const shown = aprioriLimit === null ? aprioriModel : aprioriModel.slice(0, aprioriLimit);
+  const list = $('apriori-patterns');
+  if (!aprioriModel.length) {
+    list.innerHTML = `<div class="apriori-empty"><span aria-hidden="true">○</span><p>No patterns at this strictness. Try Broad, or lower the support.</p></div>`;
+  } else {
+    list.innerHTML = shown.map(pattern => {
+      const sentence = pattern.kind === 'rule'
+        ? `When ${aprioriChipList(pattern.antecedent)} ${pattern.antecedent.length === 1 ? 'happens' : 'happen'}, ${aprioriChipList(pattern.consequent)} ${pattern.consequent.length === 1 ? 'also happens' : 'also happen'} in <b>${view.formatPercent(pattern.confidence)}</b> of cases (seen in <b>${pattern.count ?? '—'}</b> of ${pattern.total} events, <b>${view.formatLift(pattern.lift)}</b> more often than chance).`
+        : pattern.items.length === 1
+          ? `${aprioriChipList(pattern.items)} appears in <b>${pattern.count ?? '—'}</b> of ${pattern.total} events.`
+          : `${aprioriChipList(pattern.items)} appear together in <b>${pattern.count ?? '—'}</b> of ${pattern.total} events.`;
+      return `<div class="apriori-pattern${aprioriSelectedKey === pattern.key ? ' selected' : ''}" data-pattern-key="${esc(pattern.key)}" role="button" tabindex="0" aria-pressed="${aprioriSelectedKey === pattern.key}" aria-label="${esc(pattern.sentence)}">
+        <div class="apriori-sentence">${sentence}</div>
+        <div class="apriori-pattern-meta">${aprioriStrength(pattern.strength, pattern.lift)}<span class="pattern-click-hint">Click for examples</span></div>
+      </div>`;
+    }).join('');
+  }
+  const showAll = $('apriori-show-all');
+  const canExpand = aprioriModel.length > 5 && aprioriLimit !== null;
+  showAll.classList.toggle('hidden', !canExpand);
+  if (canExpand) showAll.textContent = `Show all ${aprioriModel.length}`;
+}
+
+function renderAprioriExamples() {
+  const view = aprioriView();
+  const panel = $('apriori-examples');
+  const pattern = aprioriModel.find(item => item.key === aprioriSelectedKey);
+  if (!pattern) {
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
     return;
   }
-  const wanted = new Set(aprioriSelected.items);
-  const matches = (state.events || []).filter(e => [...wanted].every(item => (e.items || []).includes(item)));
-  $('apriori-baskets').innerHTML = matches.length
-    ? `<p class="hint">${matches.length} matching baskets in the latest ${state.events.length} events (full session may be larger).</p>` + matches.slice(0, 12).map(e => `<div class="pattern">${esc(e.id)} · ${esc(e.type)} · ${esc(e.account)}<b>${(e.items || []).map(x => esc(x.replaceAll('_', ' '))).join(', ')}</b></div>`).join('')
-    : '<span class="hint">No matching baskets in the currently loaded window.</span>';
+  panel.classList.remove('hidden');
+  const wanted = new Set(pattern.items);
+  const matches = (state.events || []).filter(event => {
+    if (aprioriScope === 'abuse' && event.label !== 'abuse') return false;
+    return pattern.items.every(item => (event.items || []).includes(item));
+  });
+  const rows = matches.slice(0, 10).map(event => `<tr>
+    <td><b>${eventTime(event)}</b><small>${esc(event.id)}</small></td>
+    <td>${esc(event.account)}<small>${esc(event.device)}</small></td>
+    <td><span class="badge ${esc(event.action)}">${esc(event.action)}</span></td>
+    <td>${num(event.score, 1)}</td>
+    <td class="apriori-example-chips">${(event.items || []).map(item => aprioriChip(item, wanted.has(item))).join(' ') || '<span class="hint">No signals</span>'}</td>
+  </tr>`).join('');
+  panel.innerHTML = `<div class="apriori-example-head"><div><h3>Events that contain this pattern</h3>
+      <p class="hint"><b>${pattern.count ?? '—'} of ${pattern.total} events</b> contain this pattern. Showing ${matches.length} matching event${matches.length === 1 ? '' : 's'} from the latest ${(state.events || []).length} loaded.</p></div>
+      <button class="icon-button" id="apriori-example-close" aria-label="Close matching events">×</button></div>
+    ${matches.length ? `<div class="table-scroll table-scroll-tall"><table class="table-compact apriori-example-table"><thead><tr><th>TIME</th><th>ACCOUNT / DEVICE</th><th>ACTION</th><th>SCORE</th><th>SIGNALS IN THIS EVENT</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="hint">No matching events are in the currently loaded window.</p>'}`;
+}
+
+function renderAprioriLevels(scope) {
+  const levels = {};
+  (scope.levels || []).forEach(level => { levels[level.level] = level; });
+  const level1 = levels[1] || {candidates: 0, frequent: 0};
+  const level2 = levels[2] || {candidates: 0, frequent: 0};
+  const level3 = levels[3] || {candidates: 0, frequent: 0};
+  const candidates = aprioriTerm('candidates', 'candidate');
+  $('apriori-levels').innerHTML = `
+    <li><span class="level-tag">Level 1</span><p>${level1.frequent} single signals appear often enough (${level1.candidates} ${candidates}, ${level1.frequent} kept).</p></li>
+    <li><span class="level-tag">Level 2</span><p>Pairs built only from kept signals (${level2.candidates} ${candidates}, ${level2.frequent} kept).</p></li>
+    <li><span class="level-tag">Level 3</span><p>Triples built only from kept pairs (${level3.candidates} ${candidates}, ${level3.frequent} kept).</p></li>`;
+}
+
+function renderAprioriSplit(split) {
+  const view = aprioriView();
+  $('apriori-split-chip').textContent = split.train_n || split.test_n
+    ? `${split.train_n} first · ${split.test_n} second` : 'waiting for events';
+  $('apriori-split-meta').textContent = split.train_n || split.test_n
+    ? `We mine the first ${split.train_n} events, then check the same rules on the last ${split.test_n}. This check is separate from the pattern list above.`
+    : 'Run mixed traffic to compare the first and second half.';
+  if (!split.rows.length) {
+    $('apriori-split').innerHTML = `<div class="apriori-empty"><span aria-hidden="true">○</span><p>${esc(split.note || 'No label-free patterns were checked in both halves.')}</p></div>`;
+  } else {
+    $('apriori-split').innerHTML = split.rows.map(check => {
+      const later = check.test_confidence === null || check.test_confidence === undefined
+        ? 'Not enough data' : view.formatPercent(check.test_confidence);
+      const premiseCount = check.test_antecedent_count === null || check.test_antecedent_count === undefined
+        ? '' : ` The premise appeared ${check.test_antecedent_count} of ${split.test_n} times in the second half.`;
+      return `<div class="apriori-split-row">
+        <div class="split-rule">${aprioriChipList(check.antecedent)} <span class="arrow" aria-hidden="true">→</span> ${aprioriChipList(check.consequent)}</div>
+        <div class="split-metrics">
+          <div><span>Found in first half</span><b>${view.formatPercent(check.train_confidence)}</b></div>
+          <div><span>Holds in second half</span><b class="${check.test_confidence === null || check.test_confidence === undefined ? 'muted' : ''}">${later}</b></div>
+          <span class="verdict ${check.verdict.tone}"><span aria-hidden="true">${check.verdict.icon}</span> ${esc(check.verdict.label)}</span>
+        </div>
+        <p class="split-detail">${esc(check.verdict.detail)}${esc(premiseCount)}</p>
+      </div>`;
+    }).join('');
+  }
+  $('apriori-split-hidden').textContent = split.hidden
+    ? `${split.hidden} label-containing pattern${split.hidden === 1 ? ' is' : 's are'} hidden. Turn on Advanced (evaluation only) to inspect label rules.`
+    : '';
+}
+
+function renderAprioriEval(includeLabels) {
+  const view = aprioriView();
+  const target = $('apriori-eval');
+  if (!includeLabels) {
+    target.innerHTML = '<p class="hint">Turn on label-as-item mode to show label-containing rules.</p>';
+    return;
+  }
+  const data = state.apriori_eval || {};
+  const total = Number(data.analyzed ?? state.analyzed ?? 0);
+  const rules = (data.rules || []).filter(rule => view.hasLabel([...(rule.antecedent || []), ...(rule.consequent || [])]));
+  if (!rules.length) {
+    target.innerHTML = '<p class="hint">No label-containing rules at this strictness.</p>';
+    return;
+  }
+  target.innerHTML = `<h3>Label-containing rules</h3>` + rules.slice(0, 8).map(rule => `
+    <div class="apriori-eval-rule">
+      <div class="eval-sentence">${aprioriChipList(rule.antecedent)} <span class="arrow" aria-hidden="true">→</span> ${aprioriChipList(rule.consequent)}</div>
+      <p class="hint">${view.formatPercent(rule.confidence)} ${aprioriTerm('confidence', 'confidence')} · ${view.formatLift(rule.lift)} ${aprioriTerm('lift', 'lift')} · ${rule.count ?? '—'} of ${total} events</p>
+    </div>`).join('');
+}
+
+function renderAprioriFlow() {
+  document.querySelectorAll('#apriori-flow [data-flow-step]').forEach(item => {
+    const step = Number(item.dataset.flowStep);
+    item.classList.toggle('done', step <= aprioriGuidedStep);
+    item.classList.toggle('current', step === aprioriGuidedStep + 1 && aprioriGuidedStep < 4);
+    if (step === aprioriGuidedStep + 1 && aprioriGuidedStep < 4) item.setAttribute('aria-current', 'step');
+    else item.removeAttribute('aria-current');
+  });
+}
+
+function renderAprioriStatus() {
+  const el = $('apriori-status');
+  if (!el) return;
+  el.className = 'apriori-status';
+  if (aprioriBusy) {
+    el.classList.add('loading');
+    el.innerHTML = `<span class="spinner" aria-hidden="true"></span> ${esc(aprioriBusyMessage)}`;
+    return;
+  }
+  if (aprioriError) {
+    el.classList.add('error');
+    el.innerHTML = `<span><b>Could not mine patterns.</b> ${esc(aprioriError)}</span> <button class="button secondary" id="apriori-retry">Try again</button>`;
+    return;
+  }
+  el.textContent = aprioriNotice;
+}
+
+async function aprioriApply(support, confidence, notice) {
+  if (aprioriBusy) return false;
+  aprioriBusy = true;
+  aprioriBusyMessage = 'Mining patterns…';
+  aprioriError = '';
+  renderAprioriStatus();
+  try {
+    const next = await api('apriori', {min_support: support, min_confidence: confidence});
+    aprioriBusy = false;
+    aprioriNotice = notice || `Mined at ${aprioriView().formatPercent(support)} support and ${Math.round(confidence * 100)}% confidence.`;
+    aprioriSelectionReset();
+    render(next);
+    return true;
+  } catch (error) {
+    aprioriBusy = false;
+    aprioriError = error.message || 'Request failed.';
+    renderAprioriStatus();
+    return false;
+  }
+}
+
+function aprioriSelectionReset() {
+  aprioriSelectedKey = null;
+  aprioriLimit = 5;
+}
+
+async function aprioriApplyPreset(key, options = {}) {
+  const preset = aprioriView().PRESETS[key];
+  if (!preset) return false;
+  if (options.resetScope) aprioriScope = 'all';
+  aprioriPresetReady = true;
+  return aprioriApply(preset.minSupport, preset.minConfidence,
+    `${preset.label}: ${preset.description}${options.silent ? '' : ' Patterns updated.'}`);
+}
+
+async function aprioriUseSuggested() {
+  const stateView = aprioriView();
+  const suggested = state?.apriori_config?.suggested_min_support ?? 0.05;
+  const confidence = Number($('apriori-confidence').value) / 100;
+  return aprioriApply(suggested, confidence,
+    `Using the suggested ${stateView.formatPercent(suggested)} support so rare abuse patterns are not hidden.`);
+}
+
+function selectAprioriPattern(key) {
+  aprioriSelectedKey = key;
+  renderAprioriPatterns();
+  renderAprioriExamples();
+}
+
+function openAprioriGlossary(key) {
+  const glossary = $('apriori-glossary');
+  if (glossary) glossary.open = true;
+  const entry = document.getElementById(`glossary-${key}`);
+  if (!entry) return;
+  entry.classList.remove('glossary-focus');
+  void entry.offsetWidth;
+  entry.classList.add('glossary-focus');
+  entry.scrollIntoView({behavior: 'smooth', block: 'center'});
+  clearTimeout(entry._focusTimer);
+  entry._focusTimer = setTimeout(() => entry.classList.remove('glossary-focus'), 2200);
+}
+
+async function aprioriGuidedDemo() {
+  const view = aprioriView();
+  aprioriPresetReady = true;
+  aprioriScope = 'all';
+  aprioriGuidedStep = 0;
+  aprioriSelectionReset();
+  aprioriError = '';
+  renderAprioriFlow();
+  try {
+    aprioriBusy = true;
+    aprioriBusyMessage = 'Step 1 of 4: running mixed traffic…';
+    renderAprioriStatus();
+    const scenarioState = await api('scenario_run', {name: 'mixed'});
+    aprioriBusy = false;
+    render(scenarioState);
+    aprioriGuidedStep = 1;
+    renderAprioriFlow();
+
+    const preset = view.PRESETS.balanced;
+    aprioriBusy = true;
+    aprioriBusyMessage = 'Step 2 of 4: choosing Balanced…';
+    renderAprioriStatus();
+    const balancedState = await api('apriori', {min_support: preset.minSupport, min_confidence: preset.minConfidence});
+    aprioriBusy = false;
+    aprioriNotice = `Step 2 complete: Balanced uses ${view.formatPercent(preset.minSupport)} support and ${Math.round(preset.minConfidence * 100)}% confidence.`;
+    render(balancedState);
+    aprioriGuidedStep = 2;
+    renderAprioriFlow();
+
+    aprioriGuidedStep = 3;
+    if (aprioriModel[0]) {
+      aprioriSelectedKey = aprioriModel[0].key;
+      renderAprioriPatterns();
+      renderAprioriExamples();
+    }
+    aprioriNotice = aprioriModel[0]
+      ? `Step 3 complete: the top pattern is “${aprioriModel[0].sentence}”`
+      : 'Step 3 complete: no pattern met the Balanced thresholds.';
+    renderAprioriFlow();
+    renderAprioriStatus();
+
+    aprioriGuidedStep = 4;
+    renderAprioriFlow();
+    const splitCard = document.querySelector('.apriori-split-card');
+    if (aprioriModel[0]) $('apriori-patterns').scrollIntoView({behavior: 'smooth', block: 'center'});
+    if (splitCard) setTimeout(() => splitCard.scrollIntoView({behavior: 'smooth', block: 'center'}), 650);
+    aprioriNotice = 'Step 4 complete: compare “Found in first half” with “Holds in second half” and read the verdict badge.';
+    renderAprioriStatus();
+    toast('Apriori guided demo complete: pattern selected and time-split check shown.');
+  } catch (error) {
+    aprioriBusy = false;
+    aprioriError = error.message || 'Request failed.';
+    renderAprioriStatus();
+    toast(error.message);
+  }
 }
 
 function renderEvidence() {
@@ -565,29 +1087,60 @@ async function bloomRunDemo() {
   } catch (error) { toast(error.message); }
 }
 
-async function aprioriRunDemo() {
+async function dgimRunDemo(pattern = 'random') {
   try {
-    const s = await api('scenario_run', {name: 'mixed'});
-    render(s);
-    const suggested = s.apriori_config?.suggested_min_support ?? 0.05;
-    const next = await api('apriori', {min_support: suggested, min_confidence: 0});
-    render(next);
-    aprioriSelected = null;
-    switchTab('apriori');
-    toast(`Apriori demo: mined mixed traffic at the auto-suggested support (${(suggested * 100).toFixed(1)}%).`);
+    const chart = $('dgim-demo-chart');
+    if (chart) chart.innerHTML = '<p class="hint">Running 1000-bit stream…</p>';
+    const data = await apiGet(`dgim_demo?n=1000&window=100&pattern=${encodeURIComponent(pattern)}`);
+    const summary = data.summary;
+    if (chart) chart.innerHTML = svgLineChart(data.samples);
+    $('dgim-demo-storage').textContent = `${summary.max_buckets} buckets vs ${summary.exact_storage} exact`;
+    $('dgim-demo-summary').textContent = `Counted 1s over the last ${summary.window} bits with at most `
+      + `${summary.max_buckets} buckets instead of ${summary.exact_storage} stored bits; average error `
+      + `${pct(summary.avg_rel_error)}, worst ${pct(summary.max_rel_error)}, bound ~50%. `
+      + `(${summary.pattern} stream)`;
+    switchTab('dgim');
   } catch (error) { toast(error.message); }
 }
 
-async function dgimRunDemo(pattern = 'random') {
+async function loadDgimEntity(kind, name) {
+  dgimLoading = true;
+  dgimError = '';
+  dgimUpdateNote = '';
+  renderDgim();
   try {
-    $('dgim-chart').innerHTML = '<p class="hint">Running 1000-bit stream…</p>';
-    const data = await apiGet(`dgim_demo?n=1000&window=100&pattern=${encodeURIComponent(pattern)}`);
-    const summary = data.summary;
-    $('dgim-chart').innerHTML = svgLineChart(data.samples);
-    $('dgim-storage-chip').textContent = `${summary.max_buckets} buckets vs ${summary.exact_storage} exact`;
-    $('dgim-demo-summary').innerHTML = `1000 bits, window ${summary.window} (${esc(summary.pattern)}): max ${summary.max_buckets} buckets vs ${summary.exact_storage}-bit exact storage · max relative error ${pct(summary.max_rel_error)}, average ${pct(summary.avg_rel_error)}. ${esc(summary.error_bound)}.`;
-    switchTab('dgim');
-  } catch (error) { toast(error.message); }
+    const s = await apiGet(`state?entity=${encodeURIComponent(name)}&entity_kind=${encodeURIComponent(kind)}`);
+    dgimLoading = false;
+    render(s);
+  } catch (error) {
+    dgimLoading = false;
+    dgimError = error.message;
+    renderDgim();
+    toast(error.message);
+  }
+}
+
+async function updateDgimConfig(payload, note) {
+  const d = state?.dgim || {};
+  dgimLoading = true;
+  dgimError = '';
+  dgimUpdateNote = note || '';
+  renderDgim();
+  try {
+    const body = {...payload};
+    if (d.entity) {
+      body.dgim_entity = d.entity;
+      body.dgim_entity_kind = d.kind;
+    }
+    const s = await api('config', body);
+    dgimLoading = false;
+    render(s);
+  } catch (error) {
+    dgimLoading = false;
+    dgimError = error.message;
+    renderDgim();
+    toast(error.message);
+  }
 }
 
 async function findFalsePositive() {
@@ -611,6 +1164,12 @@ async function switchTab(name) {
   if (name !== 'live') {
     if (!state?.evaluation || !state?.apriori_levels) await refreshFull();
   }
+  if (name === 'apriori' && !aprioriPresetReady) {
+    aprioriPresetReady = true;
+    if (aprioriView()?.presetForConfig(state?.apriori_config?.min_support, state?.apriori_config?.min_confidence) !== 'balanced') {
+      await aprioriApplyPreset('balanced', {silent: true});
+    }
+  }
 }
 
 function applyPrefs() {
@@ -627,8 +1186,8 @@ const guidedSteps = [
   {caption: '<b>Step 2 — everyday payments.</b> Eight independent events stay allowed. The exact window is quiet, Bloom sees fresh identifiers, and DGIM bits stay 0.', action: async () => { await runScenario('normal', true); switchTab('live'); }},
   {caption: '<b>Step 3 — card testing.</b> Repeated small failures on one card raise card velocity. The exact rule alone can reach block; Bloom and DGIM add corroborated signals, never proof.', action: async () => { await runScenario('card_testing', true); switchTab('live'); }},
   {caption: '<b>Step 4 — Bloom filter.</b> A fixed-size bit array answers “possibly seen before?”. Query before insert; first sightings are definitely absent. A false positive is possible, so the scoring rule requires corroboration. The rotating mode lets the filter forget.', action: async () => { await bloomRunDemo(); switchTab('bloom'); }},
-  {caption: '<b>Step 5 — DGIM.</b> Estimate suspicious 1s in the last N stream elements with O(log²N) buckets. The worst-case stream shows the estimate tracking the exact count while bucket storage stays far below exact storage.', action: async () => { await dgimRunDemo('worst'); switchTab('dgim'); }},
-  {caption: '<b>Step 6 — Apriori.</b> Mine co-occurring signals offline. Fixed 12% support hides fraud patterns at 3.5% prevalence, so use the auto-suggested support and compare all baskets with the fraud-only subset. Co-occurrence is not causation.', action: async () => { await aprioriRunDemo(); switchTab('apriori'); }},
+  {caption: '<b>Step 5 — DGIM.</b> Estimate suspicious 1s in the last N stream elements with O(log N) buckets (O(log² N) bits in total). The worst-case stream shows the estimate tracking the exact count while bucket storage stays far below exact storage.', action: async () => { await dgimRunDemo('worst'); switchTab('dgim'); }},
+  {caption: '<b>Step 6 — Apriori.</b> Run mixed traffic, choose Balanced, read the strongest pattern and check whether it holds up in the second half. Apriori only describes co-occurrence; it never scores an event.', action: async () => { switchTab('apriori'); await aprioriGuidedDemo(); }},
   {caption: '<b>Step 7 — Evidence.</b> Temporal split: first 70% by event time for tuning/training, last 30% held out. Compare Bloom/DGIM and the learned baseline side by side on confusion counts, precision, recall, FPR, PR-AUC and recall@1%/5% FPR, plus per-rule ablations. Report inactive rules honestly.', action: async () => { await refreshFull(); switchTab('evidence'); }},
   {caption: '<b>Wrap-up.</b> The model is deliberately transparent: proxy signals are documented, Bloom/DGIM are approximate, and labels are authored for teaching. Use the Evidence tab and CSV export when writing the report.', action: async () => switchTab('evidence')},
 ];
@@ -730,45 +1289,111 @@ function wire() {
   // DGIM
   $('dgim-run').onclick = () => dgimRunDemo('random');
   $('dgim-worst').onclick = () => dgimRunDemo('worst');
-  $('dgim-scale').onclick = () => dgimRunDemo('random');
-  $('dgim-window-range').onchange = async () => {
-    try { render(await api('config', {dgim_window: Number($('dgim-window-range').value)})); }
-    catch (error) { toast(error.message); }
+  $('dgim-search').oninput = () => {
+    dgimSearch = $('dgim-search').value;
+    renderDgimEntityList(state?.dgim || {}, state?.dgim?.threshold ?? 5);
   };
-  $('dgim-threshold-range').onchange = async () => {
-    try { render(await api('config', {dgim_threshold: Number($('dgim-threshold-range').value)})); }
-    catch (error) { toast(error.message); }
+  document.querySelectorAll('[data-dgim-filter]').forEach(button => {
+    button.onclick = () => {
+      dgimFilter = button.dataset.dgimFilter;
+      renderDgimEntityList(state?.dgim || {}, state?.dgim?.threshold ?? 5);
+      document.querySelectorAll('[data-dgim-filter]').forEach(item => {
+        item.classList.toggle('active', item.dataset.dgimFilter === dgimFilter);
+      });
+    };
+  });
+  $('dgim-entity-list').addEventListener('click', ev => {
+    const row = ev.target.closest('[data-dgim-kind]');
+    if (row) loadDgimEntity(row.dataset.dgimKind, row.dataset.dgimName);
+  });
+  $('dgim-stream-cells').addEventListener('click', ev => {
+    const cell = ev.target.closest('[data-dgim-event]');
+    if (!cell) return;
+    const id = cell.dataset.dgimEvent;
+    if (!(state.events || []).some(item => item.id === id)) {
+      toast('That event is outside the Live inspector\'s latest 150.');
+      return;
+    }
+    selectedId = id;
+    switchTab('live');
+    renderEvents();
+    renderInspection();
+  });
+  $('dgim-window-range').oninput = () => { $('dgim-window-value').textContent = $('dgim-window-range').value; };
+  $('dgim-threshold-range').oninput = () => { $('dgim-threshold-value').textContent = $('dgim-threshold-range').value; };
+  $('dgim-window-range').onchange = () => {
+    const value = Number($('dgim-window-range').value);
+    updateDgimConfig({dgim_window: value},
+      `N changed to ${value} events; the verdict was re-evaluated.`);
   };
-  $('dgim-entity').onchange = async () => {
-    try { render(await apiGet(`state?entity=${encodeURIComponent($('dgim-entity').value)}`)); }
-    catch (error) { toast(error.message); }
+  $('dgim-threshold-range').onchange = () => {
+    const value = Number($('dgim-threshold-range').value);
+    updateDgimConfig({dgim_threshold: value},
+      `Burst threshold changed to ${value}; the verdict was re-evaluated.`);
   };
 
   // Apriori
+  $('apriori-run').onclick = aprioriGuidedDemo;
   $('apriori-support').oninput = () => { $('apriori-support-value').textContent = `${$('apriori-support').value}%`; };
   $('apriori-confidence').oninput = () => { $('apriori-confidence-value').textContent = `${$('apriori-confidence').value}%`; };
-  $('apriori-support').onchange = async () => {
-    try { render(await api('apriori', {min_support: Number($('apriori-support').value) / 100, min_confidence: Number($('apriori-confidence').value) / 100})); }
-    catch (error) { toast(error.message); }
+  const applyAdvanced = () => aprioriApply(
+    Number($('apriori-support').value) / 100,
+    Number($('apriori-confidence').value) / 100,
+    'Custom thresholds applied.');
+  $('apriori-support').onchange = applyAdvanced;
+  $('apriori-confidence').onchange = applyAdvanced;
+  $('apriori-suggest').onclick = aprioriUseSuggested;
+  $('apriori-label-mode').onchange = renderApriori;
+  document.querySelectorAll('input[name="apriori-preset"]').forEach(input => {
+    input.onchange = () => { if (input.checked) aprioriApplyPreset(input.value); };
+  });
+  document.querySelectorAll('input[name="apriori-scope"]').forEach(input => {
+    input.onchange = () => {
+      if (!input.checked) return;
+      aprioriScope = input.value;
+      aprioriSelectionReset();
+      renderApriori();
+    };
+  });
+  $('apriori-show-all').onclick = () => {
+    aprioriLimit = null;
+    renderAprioriPatterns();
   };
-  $('apriori-confidence').onchange = async () => {
-    try { render(await api('apriori', {min_support: Number($('apriori-support').value) / 100, min_confidence: Number($('apriori-confidence').value) / 100})); }
-    catch (error) { toast(error.message); }
-  };
-  $('apriori-suggest').onclick = async () => {
-    const suggested = state?.apriori_config?.suggested_min_support ?? 0.05;
-    $('apriori-support').value = Math.max(1, Math.round(suggested * 100));
-    $('apriori-support-value').textContent = `${$('apriori-support').value}%`;
-    try { render(await api('apriori', {min_support: suggested, min_confidence: Number($('apriori-confidence').value) / 100})); }
-    catch (error) { toast(error.message); }
-  };
-  $('apriori-run').onclick = aprioriRunDemo;
-  $('apriori-label-mode').onchange = () => $('apriori-eval').classList.toggle('hidden', !$('apriori-label-mode').checked);
-  $('apriori-itemsets').addEventListener('click', ev => {
-    const item = ev.target.closest('[data-itemset-index]');
+  $('apriori-patterns').addEventListener('click', ev => {
+    const item = ev.target.closest('[data-pattern-key]');
     if (!item) return;
-    aprioriSelected = aprioriItemsets[Number(item.dataset.itemsetIndex)] || null;
-    renderAprioriBaskets();
+    selectAprioriPattern(item.dataset.patternKey);
+  });
+  $('apriori-patterns').addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    const item = ev.target.closest('[data-pattern-key]');
+    if (!item) return;
+    ev.preventDefault();
+    selectAprioriPattern(item.dataset.patternKey);
+  });
+  $('apriori-examples').addEventListener('click', ev => {
+    if (!ev.target.closest('#apriori-example-close')) return;
+    aprioriSelectedKey = null;
+    renderAprioriPatterns();
+    renderAprioriExamples();
+  });
+  $('apriori-status').addEventListener('click', ev => {
+    if (!ev.target.closest('#apriori-retry')) return;
+    const preset = aprioriView()?.presetForConfig(state?.apriori_config?.min_support, state?.apriori_config?.min_confidence);
+    if (preset) aprioriApplyPreset(preset);
+    else applyAdvanced();
+  });
+  const handleGlossaryTerm = ev => {
+    const term = ev.target.closest('[data-glossary]');
+    if (!term) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    openAprioriGlossary(term.dataset.glossary);
+  };
+  $('tab-apriori').addEventListener('click', handleGlossaryTerm);
+  $('tab-apriori').addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    if (ev.target.closest('[data-glossary]')) handleGlossaryTerm(ev);
   });
 
   // Keyboard: guided demo Space/R/Esc.
