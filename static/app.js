@@ -26,6 +26,9 @@ let dgimLoading = false;
 let dgimError = '';
 let dgimUpdateNote = '';
 let evidenceBusy = false;
+let evidenceQueued = false;
+let evidenceReport = null;
+let evidenceGeneration = 0;
 let evidenceError = '';
 let audioCtx = null;
 let soundOn = localStorage.getItem('radar-sound') !== 'off';
@@ -880,7 +883,7 @@ async function aprioriGuidedDemo() {
 }
 
 function renderEvidence() {
-  const ev = state?.evaluation;
+  const ev = evidenceReport || state?.evaluation;
   const status = ev?.ladder_models || state?.ladder_status;
   const stale = $('ladder-stale');
   if (status?.message) {
@@ -892,11 +895,22 @@ function renderEvidence() {
   }
   $('baseline-source').textContent = baselineSource();
   if (!ev) {
-    $('evidence-split').textContent = 'Replay the synthetic demo to compute the comparison.';
-    $('evidence-threshold').textContent = 'review ≥ —';
-    $('ladder-abuse-count').textContent = 'Replay the synthetic demo to compute the held-out comparison.';
+    const loading = evidenceBusy && !evidenceError;
+    $('evidence-split').textContent = loading
+      ? 'Computing the held-out comparison...'
+      : 'Replay the synthetic demo to compute the comparison.';
+    $('evidence-threshold').textContent = evidenceError
+      ? 'comparison unavailable'
+      : (loading ? 'computing...' : 'review threshold unavailable');
+    $('ladder-abuse-count').textContent = evidenceError
+      ? `Could not load the comparison: ${evidenceError}`
+      : (loading
+        ? 'Loading all seven ladder rows and 95% bootstrap intervals...'
+        : 'Replay the synthetic demo to compute the held-out comparison.');
     $('ladder-few-warning').textContent = '';
-    $('evidence-ladder').innerHTML = '<tr><td colspan="8" class="hint">Playback state only. Replay to compute the ladder.</td></tr>';
+    $('evidence-ladder').innerHTML = `<tr><td colspan="8" class="hint">${loading
+      ? 'Computing precision-recall metrics and intervals...'
+      : (evidenceError ? 'Evidence request failed. Try the tab again.' : 'Playback state only. Replay to compute the ladder.')}</td></tr>`;
     $('ladder-pr-chart').innerHTML = '';
     $('ladder-model-cards').innerHTML = '';
     return;
@@ -1046,7 +1060,10 @@ async function pump(token) {
   paused = false;
   updateControls();
   $('run-status').textContent = failed ? 'Replay stopped · see the error message' : 'Replay complete · full evaluation refreshed';
-  if (!failed) await refreshFull();
+  if (!failed) {
+    await refreshFull();
+    if (activeTab() === 'evidence') await loadEvidence();
+  }
 }
 
 async function refreshFull() {
@@ -1057,12 +1074,19 @@ async function refreshFull() {
 }
 
 async function loadEvidence() {
-  if (evidenceBusy) return;
+  if (evidenceBusy) {
+    evidenceQueued = true;
+    return;
+  }
   evidenceBusy = true;
+  evidenceQueued = false;
   evidenceError = '';
+  const token = evidenceGeneration;
   renderEvidence();
   try {
     const ev = await apiGet('evidence');
+    if (token !== evidenceGeneration) return;
+    evidenceReport = ev;
     if (state) {
       state.evaluation = ev;
       if (ev.ladder_models) state.ladder_status = ev.ladder_models;
@@ -1072,12 +1096,27 @@ async function loadEvidence() {
     }
     renderEvidence();
   } catch (error) {
-    evidenceError = error.message;
-    $('ladder-abuse-count').textContent = `Could not load bootstrap intervals: ${error.message}`;
-    toast(error.message);
+    if (token !== evidenceGeneration) return;
+    evidenceError = error.message || 'Request failed.';
+    renderEvidence();
+    toast(evidenceError);
   } finally {
     evidenceBusy = false;
+    if (evidenceQueued) {
+      evidenceQueued = false;
+      await loadEvidence();
+    } else if (token === evidenceGeneration) {
+      renderEvidence();
+    }
   }
+}
+
+function clearEvidence() {
+  evidenceGeneration++;
+  evidenceReport = null;
+  evidenceQueued = false;
+  evidenceError = '';
+  if (state) state.evaluation = null;
 }
 
 function stopPlayback() {
@@ -1085,6 +1124,8 @@ function stopPlayback() {
   playing = false;
   paused = false;
   queue = [];
+  clearEvidence();
+  if (activeTab() === 'evidence') renderEvidence();
   updateControls();
 }
 
@@ -1207,6 +1248,10 @@ async function updateDgimConfig(payload, note) {
 }
 
 /* ---------- navigation and preferences ---------- */
+function activeTab() {
+  return document.querySelector('.nav.active')?.dataset.tab || 'live';
+}
+
 async function switchTab(name) {
   document.querySelectorAll('.nav').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== `tab-${name}`));
@@ -1274,7 +1319,12 @@ function wire() {
     updateControls();
     await pump(token);
   };
-  $('pause').onclick = () => { paused = !paused; updateControls(); $('run-status').textContent = paused ? 'Paused' : 'Replaying'; };
+  $('pause').onclick = async () => {
+    paused = !paused;
+    updateControls();
+    $('run-status').textContent = paused ? 'Paused' : 'Replaying';
+    if (paused && activeTab() === 'evidence') await loadEvidence();
+  };
   $('reset').onclick = resetSession;
   $('run-scenario').onclick = () => runScenario($('scenario').value, false);
   $('filter').onchange = renderEvents;
